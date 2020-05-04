@@ -30,6 +30,7 @@ import io.crate.types.FloatType;
 import io.crate.types.IntegerType;
 import io.crate.types.LongType;
 import io.crate.types.ShortType;
+import io.crate.types.TimeType;
 import io.crate.types.TimestampType;
 import org.elasticsearch.index.fielddata.NullValueOrder;
 
@@ -62,6 +63,7 @@ public class NullSentinelValues {
             case LongType.ID:
             case TimestampType.ID_WITH_TZ:
             case TimestampType.ID_WITHOUT_TZ:
+            case TimeType.ID:
                 return min ? Long.MIN_VALUE : Long.MAX_VALUE;
 
             case FloatType.ID:
@@ -90,6 +92,7 @@ public class NullSentinelValues {
                 return min ? Short.MIN_VALUE : Short.MAX_VALUE;
 
             case IntegerType.ID:
+            case TimeType.ID:
                 return min ? Integer.MIN_VALUE : Integer.MAX_VALUE;
 
             case LongType.ID:
