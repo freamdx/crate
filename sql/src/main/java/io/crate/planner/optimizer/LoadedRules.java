@@ -59,7 +59,7 @@ import java.util.Locale;
 
 public class LoadedRules implements SessionSettingProvider {
 
-    private static final String OPTIMIZER_RULE = "optimizer_";
+    private static final String OPTIMIZER_SETTING_PREFIX = "optimizer_";
 
     private static final List<Rule<?>> RULES = List.of(
         new RemoveRedundantFetchOrEval(),
@@ -96,7 +96,7 @@ public class LoadedRules implements SessionSettingProvider {
     SessionSetting<?> buildRuleSessionSetting(Rule<?> rule) {
         Class<? extends Rule> clazz = rule.getClass();
         var simpleName = clazz.getSimpleName();
-        var optimizerRuleName = OPTIMIZER_RULE + CaseFormat.UPPER_CAMEL.to(CaseFormat.LOWER_UNDERSCORE, simpleName);
+        var optimizerRuleName = OPTIMIZER_SETTING_PREFIX + CaseFormat.UPPER_CAMEL.to(CaseFormat.LOWER_UNDERSCORE, simpleName);
         return new SessionSetting<>(
             optimizerRuleName,
             objects -> {
