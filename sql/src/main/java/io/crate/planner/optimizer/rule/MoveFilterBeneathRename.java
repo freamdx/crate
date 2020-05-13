@@ -35,7 +35,6 @@ import io.crate.planner.optimizer.matcher.Pattern;
 import io.crate.statistics.TableStats;
 
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import static io.crate.planner.optimizer.matcher.Pattern.typeOf;
 import static io.crate.planner.optimizer.matcher.Patterns.source;
@@ -44,7 +43,7 @@ public class MoveFilterBeneathRename implements Rule<Filter> {
 
     private final Capture<Rename> renameCapture;
     private final Pattern<Filter> pattern;
-    private final AtomicBoolean enabled = new AtomicBoolean(true);
+    private volatile boolean enabled = true;
 
     public MoveFilterBeneathRename() {
         this.renameCapture = new Capture<>();
@@ -59,12 +58,12 @@ public class MoveFilterBeneathRename implements Rule<Filter> {
 
     @Override
     public boolean isEnabled() {
-        return enabled.get();
+        return enabled;
     }
 
     @Override
     public void setEnabled(boolean enabled) {
-        this.enabled.set(enabled);
+        this.enabled = enabled;
     }
 
     @Override

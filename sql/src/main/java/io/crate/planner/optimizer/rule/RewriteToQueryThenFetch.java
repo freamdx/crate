@@ -41,14 +41,13 @@ import io.crate.statistics.TableStats;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import static io.crate.planner.optimizer.matcher.Pattern.typeOf;
 
 public final class RewriteToQueryThenFetch implements Rule<Limit> {
 
     private final Pattern<Limit> pattern;
-    private final AtomicBoolean enabled = new AtomicBoolean(true);
+    private volatile boolean enabled = true;
 
     public RewriteToQueryThenFetch() {
         this.pattern = typeOf(Limit.class);
@@ -61,12 +60,12 @@ public final class RewriteToQueryThenFetch implements Rule<Limit> {
 
     @Override
     public boolean isEnabled() {
-        return enabled.get();
+        return enabled;
     }
 
     @Override
     public void setEnabled(boolean enabled) {
-        this.enabled.set(enabled);
+        this.enabled = enabled;
     }
 
     @Override

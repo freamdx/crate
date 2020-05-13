@@ -66,7 +66,7 @@ public final class MoveOrderBeneathRename implements Rule<Order> {
 
     private final Capture<Rename> renameCapture;
     private final Pattern<Order> pattern;
-    private final AtomicBoolean enabled = new AtomicBoolean(true);
+    private volatile boolean enabled = true;
 
     public MoveOrderBeneathRename() {
         this.renameCapture = new Capture<>();
@@ -81,12 +81,12 @@ public final class MoveOrderBeneathRename implements Rule<Order> {
 
     @Override
     public boolean isEnabled() {
-        return enabled.get();
+        return enabled;
     }
 
     @Override
     public void setEnabled(boolean enabled) {
-        this.enabled.set(enabled);
+        this.enabled = enabled;
     }
 
     @Override

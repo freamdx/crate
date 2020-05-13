@@ -46,7 +46,7 @@ public final class MoveOrderBeneathFetchOrEval implements Rule<Order> {
 
     private final Capture<Eval> fetchCapture;
     private final Pattern<Order> pattern;
-    private final AtomicBoolean enabled = new AtomicBoolean(true);
+    private volatile boolean enabled = true;
 
     public MoveOrderBeneathFetchOrEval() {
         this.fetchCapture = new Capture<>();
@@ -61,12 +61,12 @@ public final class MoveOrderBeneathFetchOrEval implements Rule<Order> {
 
     @Override
     public boolean isEnabled() {
-        return enabled.get();
+        return enabled;
     }
 
     @Override
     public void setEnabled(boolean enabled) {
-        this.enabled.set(enabled);
+        this.enabled = enabled;
     }
 
     @Override

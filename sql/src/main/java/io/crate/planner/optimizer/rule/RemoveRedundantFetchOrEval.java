@@ -41,7 +41,7 @@ import static io.crate.planner.optimizer.matcher.Pattern.typeOf;
 public final class RemoveRedundantFetchOrEval implements Rule<Eval> {
 
     private final Pattern<Eval> pattern;
-    private final AtomicBoolean enabled = new AtomicBoolean(true);
+    private volatile boolean enabled = true;
 
     public RemoveRedundantFetchOrEval() {
         this.pattern = typeOf(Eval.class)
@@ -55,12 +55,12 @@ public final class RemoveRedundantFetchOrEval implements Rule<Eval> {
 
     @Override
     public boolean isEnabled() {
-        return enabled.get();
+        return enabled;
     }
 
     @Override
     public void setEnabled(boolean enabled) {
-        this.enabled.set(enabled);
+        this.enabled = enabled;
     }
 
     @Override

@@ -32,8 +32,6 @@ import io.crate.planner.optimizer.matcher.Capture;
 import io.crate.planner.optimizer.matcher.Captures;
 import io.crate.planner.optimizer.matcher.Pattern;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-
 import static io.crate.planner.optimizer.matcher.Pattern.typeOf;
 import static io.crate.planner.optimizer.matcher.Patterns.source;
 
@@ -54,7 +52,7 @@ public final class DeduplicateOrder implements Rule<Order> {
 
     private final Capture<Order> childOrder;
     private final Pattern<Order> pattern;
-    private final AtomicBoolean enabled = new AtomicBoolean(true);
+    private volatile boolean enabled = true;
 
     public DeduplicateOrder() {
         this.childOrder = new Capture<>();
@@ -69,12 +67,12 @@ public final class DeduplicateOrder implements Rule<Order> {
 
     @Override
     public boolean isEnabled() {
-        return enabled.get();
+        return enabled;
     }
 
     @Override
     public void setEnabled(boolean enabled) {
-        this.enabled.set(enabled);
+        this.enabled = enabled;
     }
 
     @Override

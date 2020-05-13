@@ -104,7 +104,7 @@ public final class RewriteFilterOnOuterJoinToInnerJoin implements Rule<Filter> {
 
     private final Capture<NestedLoopJoin> nlCapture;
     private final Pattern<Filter> pattern;
-    private final AtomicBoolean enabled = new AtomicBoolean(true);
+    private volatile boolean enabled = true;
 
     public RewriteFilterOnOuterJoinToInnerJoin() {
         this.nlCapture = new Capture<>();
@@ -121,12 +121,12 @@ public final class RewriteFilterOnOuterJoinToInnerJoin implements Rule<Filter> {
 
     @Override
     public boolean isEnabled() {
-        return enabled.get();
+        return enabled;
     }
 
     @Override
     public void setEnabled(boolean enabled) {
-        this.enabled.set(enabled);
+        this.enabled = enabled;
     }
 
     @Override

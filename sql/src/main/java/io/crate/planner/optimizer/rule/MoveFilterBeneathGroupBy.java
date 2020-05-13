@@ -40,7 +40,6 @@ import io.crate.planner.optimizer.matcher.Pattern;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import static io.crate.planner.optimizer.matcher.Pattern.typeOf;
 import static io.crate.planner.optimizer.matcher.Patterns.source;
@@ -63,7 +62,7 @@ public final class MoveFilterBeneathGroupBy implements Rule<Filter> {
 
     private final Pattern<Filter> pattern;
     private final Capture<GroupHashAggregate> groupByCapture;
-    private final AtomicBoolean enabled = new AtomicBoolean(true);
+    private volatile boolean enabled = true;
 
     public MoveFilterBeneathGroupBy() {
         this.groupByCapture = new Capture<>();
@@ -73,12 +72,12 @@ public final class MoveFilterBeneathGroupBy implements Rule<Filter> {
 
     @Override
     public boolean isEnabled() {
-        return enabled.get();
+        return enabled;
     }
 
     @Override
     public void setEnabled(boolean enabled) {
-        this.enabled.set(enabled);
+        this.enabled = enabled;
     }
 
     @Override

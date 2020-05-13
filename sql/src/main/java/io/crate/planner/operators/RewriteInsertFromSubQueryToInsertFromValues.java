@@ -40,7 +40,7 @@ public class RewriteInsertFromSubQueryToInsertFromValues implements Rule<Insert>
 
     private final Capture<TableFunction> capture;
     private final Pattern<Insert> pattern;
-    private final AtomicBoolean enabled = new AtomicBoolean(true);
+    private volatile boolean enabled = true;
 
     public RewriteInsertFromSubQueryToInsertFromValues() {
         this.capture = new Capture<>();

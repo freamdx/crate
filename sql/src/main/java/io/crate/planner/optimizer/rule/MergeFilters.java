@@ -55,7 +55,7 @@ public class MergeFilters implements Rule<Filter> {
 
     private final Capture<Filter> child;
     private final Pattern<Filter> pattern;
-    private boolean enabled = true;
+    private volatile boolean enabled = true;
 
     public MergeFilters() {
         child = new Capture<>();

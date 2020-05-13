@@ -36,8 +36,6 @@ import io.crate.planner.optimizer.matcher.Capture;
 import io.crate.planner.optimizer.matcher.Captures;
 import io.crate.planner.optimizer.matcher.Pattern;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-
 import static io.crate.planner.optimizer.matcher.Pattern.typeOf;
 import static io.crate.planner.optimizer.matcher.Patterns.source;
 
@@ -45,7 +43,7 @@ public final class MergeAggregateAndCollectToCount implements Rule<HashAggregate
 
     private final Capture<Collect> collectCapture;
     private final Pattern<HashAggregate> pattern;
-    private final AtomicBoolean enabled = new AtomicBoolean(true);
+    private volatile boolean enabled = true;
 
     public MergeAggregateAndCollectToCount() {
         this.collectCapture = new Capture<>();
@@ -64,12 +62,12 @@ public final class MergeAggregateAndCollectToCount implements Rule<HashAggregate
 
     @Override
     public boolean isEnabled() {
-        return enabled.get();
+        return enabled
     }
 
     @Override
     public void setEnabled(boolean enabled) {
-        this.enabled.set(enabled);
+        this.enabled = enabled;
     }
 
     @Override

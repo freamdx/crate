@@ -64,7 +64,7 @@ public final class RewriteGroupByKeysLimitToTopNDistinct implements Rule<Limit> 
 
     private final Pattern<Limit> pattern;
     private final Capture<GroupHashAggregate> groupCapture;
-    private final AtomicBoolean enabled = new AtomicBoolean(true);
+    private volatile boolean enabled = true;
 
     public RewriteGroupByKeysLimitToTopNDistinct() {
         this.groupCapture = new Capture<>();
@@ -163,12 +163,12 @@ public final class RewriteGroupByKeysLimitToTopNDistinct implements Rule<Limit> 
 
     @Override
     public boolean isEnabled() {
-        return enabled.get();
+        return enabled;
     }
 
     @Override
     public void setEnabled(boolean enabled) {
-        this.enabled.set(enabled);
+        this.enabled = enabled;
     }
 
     @Override

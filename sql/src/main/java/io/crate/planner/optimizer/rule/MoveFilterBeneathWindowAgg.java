@@ -45,7 +45,7 @@ public final class MoveFilterBeneathWindowAgg implements Rule<Filter> {
 
     private final Capture<WindowAgg> windowAggCapture;
     private final Pattern<Filter> pattern;
-    private final AtomicBoolean enabled = new AtomicBoolean(true);
+    private volatile boolean enabled = true;
 
     public MoveFilterBeneathWindowAgg() {
         this.windowAggCapture = new Capture<>();
@@ -60,12 +60,12 @@ public final class MoveFilterBeneathWindowAgg implements Rule<Filter> {
 
     @Override
     public boolean isEnabled() {
-        return enabled.get();
+        return enabled;
     }
 
     @Override
     public void setEnabled(boolean enabled) {
-        this.enabled.set(enabled);
+        this.enabled = enabled;
     }
 
     @Override

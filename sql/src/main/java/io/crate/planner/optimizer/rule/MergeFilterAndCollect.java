@@ -36,8 +36,6 @@ import io.crate.planner.selectivity.SelectivityFunctions;
 import io.crate.statistics.Stats;
 import io.crate.statistics.TableStats;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-
 import static io.crate.planner.optimizer.matcher.Pattern.typeOf;
 import static io.crate.planner.optimizer.matcher.Patterns.source;
 
@@ -45,7 +43,7 @@ public class MergeFilterAndCollect implements Rule<Filter> {
 
     private final Capture<Collect> collectCapture;
     private final Pattern<Filter> pattern;
-    private final AtomicBoolean enabled = new AtomicBoolean(true);
+    private volatile boolean enabled = true;
 
     public MergeFilterAndCollect() {
         this.collectCapture = new Capture<>();
@@ -60,12 +58,12 @@ public class MergeFilterAndCollect implements Rule<Filter> {
 
     @Override
     public boolean isEnabled() {
-        return enabled.get();
+        return enabled;
     }
 
     @Override
     public void setEnabled(boolean enabled) {
-        this.enabled.set(enabled);
+        this.enabled = enabled;
     }
 
     @Override
