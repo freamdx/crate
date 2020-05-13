@@ -51,16 +51,15 @@ public class Optimizer {
     }
 
     public LogicalPlan optimize(LogicalPlan plan, TableStats tableStats, TransactionContext txnCtx) {
-        LogicalPlan optimizedRoot = tryApplyRules(rules, plan, tableStats, txnCtx);
+        LogicalPlan optimizedRoot = tryApplyRules(plan, tableStats, txnCtx);
         return tryApplyRules(
-            rules,
             optimizedRoot.replaceSources(Lists2.map(optimizedRoot.sources(), x -> optimize(x, tableStats, txnCtx))),
             tableStats,
             txnCtx
         );
     }
 
-    private LogicalPlan tryApplyRules(List<Rule<?>> rules, LogicalPlan plan, TableStats tableStats, TransactionContext txnCtx) {
+    private LogicalPlan tryApplyRules(LogicalPlan plan, TableStats tableStats, TransactionContext txnCtx) {
         final boolean isTraceEnabled = LOGGER.isTraceEnabled();
         LogicalPlan node = plan;
         // Some rules may only become applicable after another rule triggered, so we keep
