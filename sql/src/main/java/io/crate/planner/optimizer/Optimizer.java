@@ -45,7 +45,7 @@ public class Optimizer {
     private final Functions functions;
 
     public Optimizer(Functions functions, Supplier<Version> minNodeVersionInCluster, List<Class<? extends Rule<?>>> rulesToInclude) {
-        this.rules = loadRules(rulesToInclude);
+        this.rules = new LoadedRules().getRules(rulesToInclude);
         this.minNodeVersionInCluster = minNodeVersionInCluster;
         this.functions = functions;
     }
@@ -101,9 +101,5 @@ public class Optimizer {
         assert numIterations < 10_000
             : "Optimizer reached 10_000 iterations safety guard. This is an indication of a broken rule that matches again and again";
         return node;
-    }
-
-    private List<Rule<?>> loadRules(List<Class<? extends Rule<?>>> rulesToInclude) {
-        return new LoadedRules().getRules(rulesToInclude);
     }
 }
