@@ -57,7 +57,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-public class LoadedRules implements SessionSettingProvider, RuleProvider {
+public class LoadedRules implements SessionSettingProvider {
 
     private static final String OPTIMIZER_RULE = "optimizer_";
 
