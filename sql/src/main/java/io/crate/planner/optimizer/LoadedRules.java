@@ -53,9 +53,9 @@ import io.crate.planner.optimizer.rule.RewriteToQueryThenFetch;
 import io.crate.types.DataTypes;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 
 public class LoadedRules implements SessionSettingProvider {
 
@@ -112,10 +112,10 @@ public class LoadedRules implements SessionSettingProvider {
 
     public final List<Rule<?>> getRules(List<Class<? extends Rule<?>>> includedRules) {
         if (includedRules.isEmpty()) {
-            return RULES;
+            return List.of();
         }
-        var includes = Set.of(includedRules);
-        var result = new ArrayList<Rule<?>>(includes.size());
+        var includes = new HashSet<>(includedRules);
+        var result = new ArrayList<Rule<?>>(includedRules.size());
         for (var rule : RULES) {
             if (includes.contains(rule.getClass())) {
                 result.add(rule);
