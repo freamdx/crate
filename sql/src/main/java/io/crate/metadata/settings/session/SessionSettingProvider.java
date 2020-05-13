@@ -22,8 +22,6 @@
 
 package io.crate.metadata.settings.session;
 
-import io.crate.planner.optimizer.Rule;
-
 import java.util.List;
 
 public interface SessionSettingProvider {
