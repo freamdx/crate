@@ -25,6 +25,7 @@ package io.crate.planner.optimizer.rule;
 import io.crate.analyze.OrderBy;
 import io.crate.expression.symbol.FieldReplacer;
 import io.crate.expression.symbol.Symbol;
+import io.crate.metadata.Functions;
 import io.crate.metadata.TransactionContext;
 import io.crate.planner.operators.LogicalPlan;
 import io.crate.planner.operators.Order;
@@ -36,6 +37,7 @@ import io.crate.planner.optimizer.matcher.Pattern;
 import io.crate.statistics.TableStats;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
 import static io.crate.planner.optimizer.matcher.Pattern.typeOf;
@@ -64,6 +66,7 @@ public final class MoveOrderBeneathRename implements Rule<Order> {
 
     private final Capture<Rename> renameCapture;
     private final Pattern<Order> pattern;
+    private final AtomicBoolean enabled = new AtomicBoolean(true);
 
     public MoveOrderBeneathRename() {
         this.renameCapture = new Capture<>();
@@ -77,10 +80,21 @@ public final class MoveOrderBeneathRename implements Rule<Order> {
     }
 
     @Override
+    public boolean isEnabled() {
+        return enabled.get();
+    }
+
+    @Override
+    public void setEnabled(boolean enabled) {
+        this.enabled.set(enabled);
+    }
+
+    @Override
     public LogicalPlan apply(Order plan,
                              Captures captures,
                              TableStats tableStats,
-                             TransactionContext txnCtx) {
+                             TransactionContext txnCtx,
+                             Functions functions) {
         Rename rename = captures.get(renameCapture);
         Function<? super Symbol, ? extends Symbol> mapField = FieldReplacer.bind(rename::resolveField);
         OrderBy mappedOrderBy = plan.orderBy().map(mapField);

@@ -25,6 +25,7 @@ package io.crate.planner.optimizer.rule;
 import static io.crate.planner.optimizer.matcher.Pattern.typeOf;
 import static io.crate.planner.optimizer.matcher.Patterns.source;
 
+import io.crate.metadata.Functions;
 import org.elasticsearch.Version;
 
 import io.crate.expression.symbol.Literal;
@@ -39,6 +40,8 @@ import io.crate.planner.optimizer.matcher.Captures;
 import io.crate.planner.optimizer.matcher.Pattern;
 import io.crate.statistics.TableStats;
 import io.crate.types.DataTypes;
+
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * A rule to rewrite a `SELECT DISTINCT [...] LIMIT n` to use a special TopNDistinct operator.
@@ -61,7 +64,7 @@ public final class RewriteGroupByKeysLimitToTopNDistinct implements Rule<Limit> 
 
     private final Pattern<Limit> pattern;
     private final Capture<GroupHashAggregate> groupCapture;
-
+    private final AtomicBoolean enabled = new AtomicBoolean(true);
 
     public RewriteGroupByKeysLimitToTopNDistinct() {
         this.groupCapture = new Capture<>();
@@ -159,7 +162,21 @@ public final class RewriteGroupByKeysLimitToTopNDistinct implements Rule<Limit> 
     }
 
     @Override
-    public LogicalPlan apply(Limit limit, Captures captures, TableStats tableStats, TransactionContext txnCtx) {
+    public boolean isEnabled() {
+        return enabled.get();
+    }
+
+    @Override
+    public void setEnabled(boolean enabled) {
+        this.enabled.set(enabled);
+    }
+
+    @Override
+    public LogicalPlan apply(Limit limit,
+                             Captures captures,
+                             TableStats tableStats,
+                             TransactionContext txnCtx,
+                             Functions functions) {
         // In SELECT DISTINCT x, y FROM tbl OFFSET 30 LIMIT 20;
         // We can ignore a OFFSET because `tbl` is not required to have a
         // stable sorting order.

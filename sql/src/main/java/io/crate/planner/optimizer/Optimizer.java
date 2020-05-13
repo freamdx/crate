@@ -22,8 +22,8 @@
 
 package io.crate.planner.optimizer;
 
-import com.google.common.annotations.VisibleForTesting;
 import io.crate.common.collections.Lists2;
+import io.crate.metadata.Functions;
 import io.crate.metadata.TransactionContext;
 import io.crate.planner.operators.LogicalPlan;
 import io.crate.planner.optimizer.matcher.Captures;
@@ -33,7 +33,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.elasticsearch.Version;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -43,44 +42,22 @@ public class Optimizer {
 
     private final List<Rule<?>> rules;
     private final Supplier<Version> minNodeVersionInCluster;
+    private final Functions functions;
 
-    public Optimizer(List<Rule<?>> rules, Supplier<Version> minNodeVersionInCluster) {
-        this.rules = rules;
+    public Optimizer(Functions functions, Supplier<Version> minNodeVersionInCluster, List<Class<? extends Rule<?>>> rulesToInclude) {
+        this.rules = loadRules(rulesToInclude);
         this.minNodeVersionInCluster = minNodeVersionInCluster;
+        this.functions = functions;
     }
 
     public LogicalPlan optimize(LogicalPlan plan, TableStats tableStats, TransactionContext txnCtx) {
-        // Rules can be excluded by session setting, therefore rules need to be filtered before application
-        // e.g. 'SET SESSION optimizer_merge_filters = false' means to exclude the 'MergeFilter' rule
-        // from the optimizer
-        var filteredRules = filterRulesFromContext(rules, txnCtx);
-        LogicalPlan optimizedRoot = tryApplyRules(filteredRules, plan, tableStats, txnCtx);
+        LogicalPlan optimizedRoot = tryApplyRules(rules, plan, tableStats, txnCtx);
         return tryApplyRules(
-            filteredRules,
+            rules,
             optimizedRoot.replaceSources(Lists2.map(optimizedRoot.sources(), x -> optimize(x, tableStats, txnCtx))),
             tableStats,
             txnCtx
         );
-    }
-
-    @VisibleForTesting
-    static List<Rule<?>> filterRulesFromContext(List<Rule<?>> rules, TransactionContext txnCtx) {
-        final boolean isTraceEnabled = LOGGER.isTraceEnabled();
-        var rulesToExclude = txnCtx.sessionSettings().excludedOptimizerRules();
-        if (rulesToExclude.isEmpty()) {
-            return rules;
-        }
-        var filteredRules = new ArrayList<Rule<?>>(rules.size());
-        for (var rule : rules) {
-            if (rulesToExclude.contains(rule.getClass())) {
-                if (isTraceEnabled) {
-                    LOGGER.trace("Rule '" + rule.getClass().getSimpleName() + "' excluded from execution");
-                }
-            } else {
-                filteredRules.add(rule);
-            }
-        }
-        return filteredRules;
     }
 
     private LogicalPlan tryApplyRules(List<Rule<?>> rules, LogicalPlan plan, TableStats tableStats, TransactionContext txnCtx) {
@@ -94,6 +71,12 @@ public class Optimizer {
             done = true;
             Version minVersion = minNodeVersionInCluster.get();
             for (Rule rule : rules) {
+                if (!rule.isEnabled()) {
+                    if (isTraceEnabled) {
+                        LOGGER.trace("Rule '" + rule.getClass().getSimpleName() + "' excluded from execution");
+                    }
+                    continue;
+                }
                 if (minVersion.before(rule.requiredVersion())) {
                     continue;
                 }
@@ -103,7 +86,7 @@ public class Optimizer {
                         LOGGER.trace("Rule '" + rule.getClass().getSimpleName() + "' matched");
                     }
                     @SuppressWarnings("unchecked")
-                    LogicalPlan transformedPlan = rule.apply(match.value(), match.captures(), tableStats, txnCtx);
+                    LogicalPlan transformedPlan = rule.apply(match.value(), match.captures(), tableStats, txnCtx, functions);
                     if (transformedPlan != null) {
                         if (isTraceEnabled) {
                             LOGGER.trace("Rule '" + rule.getClass().getSimpleName() + "' transformed the logical plan");
@@ -118,5 +101,9 @@ public class Optimizer {
         assert numIterations < 10_000
             : "Optimizer reached 10_000 iterations safety guard. This is an indication of a broken rule that matches again and again";
         return node;
+    }
+
+    private List<Rule<?>> loadRules(List<Class<? extends Rule<?>>> rulesToInclude) {
+        return new LoadedRules().getRules(rulesToInclude);
     }
 }

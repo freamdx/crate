@@ -116,39 +116,42 @@ public class LogicalPlanner {
 
     public LogicalPlanner(Functions functions, TableStats tableStats, Supplier<Version> minNodeVersionInCluster) {
         this.optimizer = new Optimizer(
+            functions,
+            minNodeVersionInCluster,
             List.of(
-                new RemoveRedundantFetchOrEval(),
-                new MergeAggregateAndCollectToCount(),
-                new MergeFilters(),
-                new MoveFilterBeneathRename(),
-                new MoveFilterBeneathFetchOrEval(),
-                new MoveFilterBeneathOrder(),
-                new MoveFilterBeneathProjectSet(),
-                new MoveFilterBeneathHashJoin(),
-                new MoveFilterBeneathNestedLoop(),
-                new MoveFilterBeneathUnion(),
-                new MoveFilterBeneathGroupBy(),
-                new MoveFilterBeneathWindowAgg(),
-                new MergeFilterAndCollect(),
-                new RewriteFilterOnOuterJoinToInnerJoin(functions),
-                new MoveOrderBeneathUnion(),
-                new MoveOrderBeneathNestedLoop(),
-                new MoveOrderBeneathFetchOrEval(),
-                new MoveOrderBeneathRename(),
-                new DeduplicateOrder(),
-                new RewriteCollectToGet(functions),
-                new RewriteGroupByKeysLimitToTopNDistinct()
-            ),
-            minNodeVersionInCluster
+                RemoveRedundantFetchOrEval.class,
+                MergeAggregateAndCollectToCount.class,
+                MergeFilters.class,
+                MoveFilterBeneathRename.class,
+                MoveFilterBeneathFetchOrEval.class,
+                MoveFilterBeneathOrder.class,
+                MoveFilterBeneathProjectSet.class,
+                MoveFilterBeneathHashJoin.class,
+                MoveFilterBeneathNestedLoop.class,
+                MoveFilterBeneathUnion.class,
+                MoveFilterBeneathGroupBy.class,
+                MoveFilterBeneathWindowAgg.class,
+                MergeFilterAndCollect.class,
+                RewriteFilterOnOuterJoinToInnerJoin.class,
+                MoveOrderBeneathUnion.class,
+                MoveOrderBeneathNestedLoop.class,
+                MoveOrderBeneathFetchOrEval.class,
+                MoveOrderBeneathRename.class,
+                DeduplicateOrder.class,
+                RewriteCollectToGet.class,
+                RewriteGroupByKeysLimitToTopNDistinct.class
+            )
         );
         this.fetchOptimizer = new Optimizer(
-            List.of(new RewriteToQueryThenFetch()),
-            minNodeVersionInCluster
-        );
+            functions,
+            minNodeVersionInCluster,
+            List.of(RewriteToQueryThenFetch.class)
+            );
         this.writeOptimizer = new Optimizer(
-            List.of(new RewriteInsertFromSubQueryToInsertFromValues()),
-            minNodeVersionInCluster
-        );
+            functions,
+            minNodeVersionInCluster,
+            List.of(RewriteInsertFromSubQueryToInsertFromValues.class)
+            );
         this.tableStats = tableStats;
     }
 

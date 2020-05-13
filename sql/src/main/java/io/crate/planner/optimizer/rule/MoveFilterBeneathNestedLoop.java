@@ -22,6 +22,7 @@
 
 package io.crate.planner.optimizer.rule;
 
+import io.crate.metadata.Functions;
 import io.crate.metadata.TransactionContext;
 import io.crate.statistics.TableStats;
 import io.crate.planner.operators.Filter;
@@ -32,6 +33,8 @@ import io.crate.planner.optimizer.matcher.Capture;
 import io.crate.planner.optimizer.matcher.Captures;
 import io.crate.planner.optimizer.matcher.Pattern;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import static io.crate.planner.optimizer.matcher.Pattern.typeOf;
 import static io.crate.planner.optimizer.matcher.Patterns.source;
 import static io.crate.planner.optimizer.rule.FilterOnJoinsUtil.moveQueryBelowJoin;
@@ -40,6 +43,7 @@ public final class MoveFilterBeneathNestedLoop implements Rule<Filter> {
 
     private final Capture<NestedLoopJoin> joinCapture;
     private final Pattern<Filter> pattern;
+    private final AtomicBoolean enabled = new AtomicBoolean(true);
 
     public MoveFilterBeneathNestedLoop() {
         this.joinCapture = new Capture<>();
@@ -54,6 +58,16 @@ public final class MoveFilterBeneathNestedLoop implements Rule<Filter> {
     }
 
     @Override
+    public boolean isEnabled() {
+        return enabled.get();
+    }
+
+    @Override
+    public void setEnabled(boolean enabled) {
+        this.enabled.set(enabled);
+    }
+
+    @Override
     public Pattern<Filter> pattern() {
         return pattern;
     }
@@ -62,7 +76,8 @@ public final class MoveFilterBeneathNestedLoop implements Rule<Filter> {
     public LogicalPlan apply(Filter filter,
                              Captures captures,
                              TableStats tableStats,
-                             TransactionContext txnCtx) {
+                             TransactionContext txnCtx,
+                             Functions functions) {
         NestedLoopJoin join = captures.get(joinCapture);
         return moveQueryBelowJoin(filter.query(), join);
     }

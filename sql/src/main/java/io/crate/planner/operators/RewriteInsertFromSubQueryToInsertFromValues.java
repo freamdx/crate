@@ -23,12 +23,15 @@
 package io.crate.planner.operators;
 
 import io.crate.expression.tablefunctions.ValuesFunction;
+import io.crate.metadata.Functions;
 import io.crate.metadata.TransactionContext;
 import io.crate.planner.optimizer.Rule;
 import io.crate.planner.optimizer.matcher.Capture;
 import io.crate.planner.optimizer.matcher.Captures;
 import io.crate.planner.optimizer.matcher.Pattern;
 import io.crate.statistics.TableStats;
+
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static io.crate.planner.optimizer.matcher.Pattern.typeOf;
 import static io.crate.planner.optimizer.matcher.Patterns.source;
@@ -37,8 +40,9 @@ public class RewriteInsertFromSubQueryToInsertFromValues implements Rule<Insert>
 
     private final Capture<TableFunction> capture;
     private final Pattern<Insert> pattern;
+    private final AtomicBoolean enabled = new AtomicBoolean(true);
 
-    RewriteInsertFromSubQueryToInsertFromValues() {
+    public RewriteInsertFromSubQueryToInsertFromValues() {
         this.capture = new Capture<>();
         this.pattern = typeOf(Insert.class)
             .with(source(), typeOf(TableFunction.class).capturedAs(capture));
@@ -50,10 +54,21 @@ public class RewriteInsertFromSubQueryToInsertFromValues implements Rule<Insert>
     }
 
     @Override
+    public boolean isEnabled() {
+        return enabled.get();
+    }
+
+    @Override
+    public void setEnabled(boolean enabled) {
+        this.enabled.set(enabled);
+    }
+
+    @Override
     public LogicalPlan apply(Insert plan,
                              Captures captures,
                              TableStats tableStats,
-                             TransactionContext txnCtx) {
+                             TransactionContext txnCtx,
+                             Functions functions) {
         TableFunction tableFunction = captures.get(this.capture);
         var relation = tableFunction.relation();
         if (relation.function().info().ident().name().equals(ValuesFunction.NAME)) {

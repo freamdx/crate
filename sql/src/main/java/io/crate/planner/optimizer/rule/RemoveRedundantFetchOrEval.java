@@ -22,6 +22,7 @@
 
 package io.crate.planner.optimizer.rule;
 
+import io.crate.metadata.Functions;
 import io.crate.metadata.TransactionContext;
 import io.crate.statistics.TableStats;
 import io.crate.planner.operators.Eval;
@@ -29,6 +30,8 @@ import io.crate.planner.operators.LogicalPlan;
 import io.crate.planner.optimizer.Rule;
 import io.crate.planner.optimizer.matcher.Captures;
 import io.crate.planner.optimizer.matcher.Pattern;
+
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static io.crate.planner.optimizer.matcher.Pattern.typeOf;
 
@@ -38,6 +41,7 @@ import static io.crate.planner.optimizer.matcher.Pattern.typeOf;
 public final class RemoveRedundantFetchOrEval implements Rule<Eval> {
 
     private final Pattern<Eval> pattern;
+    private final AtomicBoolean enabled = new AtomicBoolean(true);
 
     public RemoveRedundantFetchOrEval() {
         this.pattern = typeOf(Eval.class)
@@ -50,7 +54,21 @@ public final class RemoveRedundantFetchOrEval implements Rule<Eval> {
     }
 
     @Override
-    public LogicalPlan apply(Eval plan, Captures captures, TableStats tableStats, TransactionContext txnCtx) {
+    public boolean isEnabled() {
+        return enabled.get();
+    }
+
+    @Override
+    public void setEnabled(boolean enabled) {
+        this.enabled.set(enabled);
+    }
+
+    @Override
+    public LogicalPlan apply(Eval plan,
+                             Captures captures,
+                             TableStats tableStats,
+                             TransactionContext txnCtx,
+                             Functions functions) {
         return plan.source();
     }
 }

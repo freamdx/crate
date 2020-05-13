@@ -22,29 +22,10 @@
 
 package io.crate.planner.optimizer;
 
-import io.crate.metadata.Functions;
-import io.crate.metadata.TransactionContext;
-import io.crate.planner.operators.LogicalPlan;
-import io.crate.planner.optimizer.matcher.Captures;
-import io.crate.planner.optimizer.matcher.Pattern;
-import io.crate.statistics.TableStats;
-import org.elasticsearch.Version;
+import java.util.List;
 
-public interface Rule<T> {
+public interface RuleProvider {
 
-    Pattern<T> pattern();
-
-    boolean isEnabled();
-
-    void setEnabled(boolean enabled);
-
-    LogicalPlan apply(T plan, Captures captures, TableStats tableStats, TransactionContext txnCtx, Functions functions);
-
-    /**
-     * @return The version all nodes in the cluster must have to be able to use this optimization.
-     */
-    default Version requiredVersion() {
-        return Version.V_4_0_0;
-    }
+    List<Rule<?>> getRules(List<Class<? extends Rule<?>>> includedRules);
 
 }

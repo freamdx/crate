@@ -27,6 +27,7 @@ import io.crate.expression.symbol.Function;
 import io.crate.expression.symbol.Symbol;
 import io.crate.expression.symbol.SymbolVisitors;
 import io.crate.metadata.FunctionInfo;
+import io.crate.metadata.Functions;
 import io.crate.metadata.TransactionContext;
 import io.crate.statistics.TableStats;
 import io.crate.planner.operators.Filter;
@@ -39,6 +40,7 @@ import io.crate.planner.optimizer.matcher.Pattern;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static io.crate.planner.optimizer.matcher.Pattern.typeOf;
 import static io.crate.planner.optimizer.matcher.Patterns.source;
@@ -61,11 +63,22 @@ public final class MoveFilterBeneathGroupBy implements Rule<Filter> {
 
     private final Pattern<Filter> pattern;
     private final Capture<GroupHashAggregate> groupByCapture;
+    private final AtomicBoolean enabled = new AtomicBoolean(true);
 
     public MoveFilterBeneathGroupBy() {
         this.groupByCapture = new Capture<>();
         this.pattern = typeOf(Filter.class)
             .with(source(), typeOf(GroupHashAggregate.class).capturedAs(groupByCapture));
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return enabled.get();
+    }
+
+    @Override
+    public void setEnabled(boolean enabled) {
+        this.enabled.set(enabled);
     }
 
     @Override
@@ -77,7 +90,8 @@ public final class MoveFilterBeneathGroupBy implements Rule<Filter> {
     public LogicalPlan apply(Filter filter,
                              Captures captures,
                              TableStats tableStats,
-                             TransactionContext txnCtx) {
+                             TransactionContext txnCtx,
+                             Functions functions) {
         // Since something like `SELECT x, sum(y) FROM t GROUP BY x HAVING y > 10` is not valid
         // (y would have to be declared as group key) any parts of a HAVING that is not an aggregation can be moved.
         Symbol predicate = filter.query();

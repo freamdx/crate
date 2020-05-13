@@ -21,7 +21,6 @@
 
 package io.crate.integrationtests;
 
-import com.carrotsearch.randomizedtesting.annotations.Repeat;
 import io.crate.action.sql.SQLActionException;
 import io.crate.testing.UseHashJoins;
 import io.crate.testing.UseRandomizedSchema;
@@ -421,7 +420,10 @@ public class ShowIntegrationTest extends SQLTransportIntegrationTest {
             "optimizer_move_order_beneath_rename| true| Indicates if the optimizer rule MoveOrderBeneathRename is activated.\n" +
             "optimizer_deduplicate_order| true| Indicates if the optimizer rule DeduplicateOrder is activated.\n" +
             "optimizer_rewrite_collect_to_get| true| Indicates if the optimizer rule RewriteCollectToGet is activated.\n" +
-            "optimizer_rewrite_group_by_keys_limit_to_top_n_distinct| true| Indicates if the optimizer rule RewriteGroupByKeysLimitToTopNDistinct is activated.\n"
+            "optimizer_rewrite_group_by_keys_limit_to_top_n_distinct| true| Indicates if the optimizer rule RewriteGroupByKeysLimitToTopNDistinct is activated.\n" +
+            "optimizer_rewrite_insert_from_sub_query_to_insert_from_values| true| Indicates if the optimizer rule RewriteInsertFromSubQueryToInsertFromValues is activated.\n" +
+            "optimizer_rewrite_to_query_then_fetch| true| Indicates if the optimizer rule RewriteToQueryThenFetch is activated.\n"
+
             )
         );
     }

@@ -46,6 +46,7 @@ import io.crate.statistics.TableStats;
 import javax.annotation.Nullable;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static io.crate.planner.optimizer.matcher.Pattern.typeOf;
 import static io.crate.planner.optimizer.matcher.Patterns.source;
@@ -103,10 +104,9 @@ public final class RewriteFilterOnOuterJoinToInnerJoin implements Rule<Filter> {
 
     private final Capture<NestedLoopJoin> nlCapture;
     private final Pattern<Filter> pattern;
-    private final EvaluatingNormalizer normalizer;
+    private final AtomicBoolean enabled = new AtomicBoolean(true);
 
-    public RewriteFilterOnOuterJoinToInnerJoin(Functions functions) {
-        this.normalizer = EvaluatingNormalizer.functionOnlyNormalizer(functions);
+    public RewriteFilterOnOuterJoinToInnerJoin() {
         this.nlCapture = new Capture<>();
         this.pattern = typeOf(Filter.class)
                 .with(source(), typeOf(NestedLoopJoin.class).capturedAs(nlCapture)
@@ -120,10 +120,22 @@ public final class RewriteFilterOnOuterJoinToInnerJoin implements Rule<Filter> {
     }
 
     @Override
+    public boolean isEnabled() {
+        return enabled.get();
+    }
+
+    @Override
+    public void setEnabled(boolean enabled) {
+        this.enabled.set(enabled);
+    }
+
+    @Override
     public LogicalPlan apply(Filter filter,
                              Captures captures,
                              TableStats tableStats,
-                             TransactionContext txnCtx) {
+                             TransactionContext txnCtx,
+                             Functions functions) {
+        EvaluatingNormalizer normalizer = EvaluatingNormalizer.functionOnlyNormalizer(functions);
         NestedLoopJoin nl = captures.get(nlCapture);
         Symbol query = filter.query();
         Map<Set<RelationName>, Symbol> splitQueries = QuerySplitter.split(query);
@@ -158,7 +170,7 @@ public final class RewriteFilterOnOuterJoinToInnerJoin implements Rule<Filter> {
                 if (rightQuery == null) {
                     newRhs = rhs;
                     newJoinIsInnerJoin = false;
-                } else if (couldMatchOnNull(rightQuery)) {
+                } else if (couldMatchOnNull(rightQuery, normalizer)) {
                     newRhs = rhs;
                     newJoinIsInnerJoin = false;
                     splitQueries.put(rightName, rightQuery);
@@ -182,7 +194,7 @@ public final class RewriteFilterOnOuterJoinToInnerJoin implements Rule<Filter> {
                 if (leftQuery == null) {
                     newLhs = lhs;
                     newJoinIsInnerJoin = false;
-                } else if (couldMatchOnNull(leftQuery)) {
+                } else if (couldMatchOnNull(leftQuery, normalizer)) {
                     newLhs = lhs;
                     newJoinIsInnerJoin = false;
                     splitQueries.put(leftName, leftQuery);
@@ -205,7 +217,7 @@ public final class RewriteFilterOnOuterJoinToInnerJoin implements Rule<Filter> {
                  * +------+------+
                  */
 
-                if (couldMatchOnNull(leftQuery)) {
+                if (couldMatchOnNull(leftQuery, normalizer)) {
                     newLhs = lhs;
                 } else {
                     newLhs = getNewSource(leftQuery, lhs);
@@ -213,7 +225,7 @@ public final class RewriteFilterOnOuterJoinToInnerJoin implements Rule<Filter> {
                         splitQueries.put(leftName, leftQuery);
                     }
                 }
-                if (couldMatchOnNull(rightQuery)) {
+                if (couldMatchOnNull(rightQuery, normalizer)) {
                     newRhs = rhs;
                 } else {
                     newRhs = getNewSource(rightQuery, rhs);
@@ -264,7 +276,7 @@ public final class RewriteFilterOnOuterJoinToInnerJoin implements Rule<Filter> {
         return splitQueries.isEmpty() ? newJoin : new Filter(newJoin, AndOperator.join(splitQueries.values()));
     }
 
-    private boolean couldMatchOnNull(@Nullable Symbol query) {
+    private boolean couldMatchOnNull(@Nullable Symbol query, EvaluatingNormalizer normalizer) {
         if (query == null) {
             return false;
         }

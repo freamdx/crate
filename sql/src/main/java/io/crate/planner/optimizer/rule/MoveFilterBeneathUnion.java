@@ -24,6 +24,7 @@ package io.crate.planner.optimizer.rule;
 
 import io.crate.expression.symbol.FieldReplacer;
 import io.crate.expression.symbol.Symbol;
+import io.crate.metadata.Functions;
 import io.crate.metadata.TransactionContext;
 import io.crate.statistics.TableStats;
 import io.crate.planner.operators.Filter;
@@ -35,6 +36,7 @@ import io.crate.planner.optimizer.matcher.Captures;
 import io.crate.planner.optimizer.matcher.Pattern;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static io.crate.planner.optimizer.matcher.Pattern.typeOf;
 import static io.crate.planner.optimizer.matcher.Patterns.source;
@@ -43,6 +45,7 @@ public final class MoveFilterBeneathUnion implements Rule<Filter> {
 
     private final Capture<Union> unionCapture;
     private final Pattern<Filter> pattern;
+    private final AtomicBoolean enabled = new AtomicBoolean(true);
 
     public MoveFilterBeneathUnion() {
         this.unionCapture = new Capture<>();
@@ -56,10 +59,21 @@ public final class MoveFilterBeneathUnion implements Rule<Filter> {
     }
 
     @Override
+    public boolean isEnabled() {
+        return enabled.get();
+    }
+
+    @Override
+    public void setEnabled(boolean enabled) {
+        this.enabled.set(enabled);
+    }
+
+    @Override
     public LogicalPlan apply(Filter filter,
                              Captures captures,
                              TableStats tableStats,
-                             TransactionContext txnCtx) {
+                             TransactionContext txnCtx,
+                             Functions functions) {
         Union union = captures.get(unionCapture);
         LogicalPlan lhs = union.sources().get(0);
         LogicalPlan rhs = union.sources().get(1);

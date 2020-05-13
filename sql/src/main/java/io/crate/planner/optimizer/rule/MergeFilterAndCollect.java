@@ -23,6 +23,7 @@
 package io.crate.planner.optimizer.rule;
 
 import io.crate.analyze.WhereClause;
+import io.crate.metadata.Functions;
 import io.crate.metadata.TransactionContext;
 import io.crate.planner.operators.Collect;
 import io.crate.planner.operators.Filter;
@@ -35,6 +36,8 @@ import io.crate.planner.selectivity.SelectivityFunctions;
 import io.crate.statistics.Stats;
 import io.crate.statistics.TableStats;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import static io.crate.planner.optimizer.matcher.Pattern.typeOf;
 import static io.crate.planner.optimizer.matcher.Patterns.source;
 
@@ -42,6 +45,7 @@ public class MergeFilterAndCollect implements Rule<Filter> {
 
     private final Capture<Collect> collectCapture;
     private final Pattern<Filter> pattern;
+    private final AtomicBoolean enabled = new AtomicBoolean(true);
 
     public MergeFilterAndCollect() {
         this.collectCapture = new Capture<>();
@@ -55,10 +59,21 @@ public class MergeFilterAndCollect implements Rule<Filter> {
     }
 
     @Override
+    public boolean isEnabled() {
+        return enabled.get();
+    }
+
+    @Override
+    public void setEnabled(boolean enabled) {
+        this.enabled.set(enabled);
+    }
+
+    @Override
     public LogicalPlan apply(Filter filter,
                              Captures captures,
                              TableStats tableStats,
-                             TransactionContext txnCtx) {
+                             TransactionContext txnCtx,
+                             Functions functions) {
         Collect collect = captures.get(collectCapture);
         Stats stats = tableStats.getStats(collect.relation().tableInfo().ident());
         WhereClause newWhere = collect.where().add(filter.query());
