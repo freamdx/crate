@@ -276,7 +276,7 @@ public final class RewriteFilterOnOuterJoinToInnerJoin implements Rule<Filter> {
         return splitQueries.isEmpty() ? newJoin : new Filter(newJoin, AndOperator.join(splitQueries.values()));
     }
 
-    private boolean couldMatchOnNull(@Nullable Symbol query, EvaluatingNormalizer normalizer) {
+    private static boolean couldMatchOnNull(@Nullable Symbol query, EvaluatingNormalizer normalizer) {
         if (query == null) {
             return false;
         }
