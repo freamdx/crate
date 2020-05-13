@@ -62,7 +62,7 @@ public final class MergeAggregateAndCollectToCount implements Rule<HashAggregate
 
     @Override
     public boolean isEnabled() {
-        return enabled
+        return enabled;
     }
 
     @Override
