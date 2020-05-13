@@ -31,8 +31,6 @@ import io.crate.planner.optimizer.Rule;
 import io.crate.planner.optimizer.matcher.Captures;
 import io.crate.planner.optimizer.matcher.Pattern;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-
 import static io.crate.planner.optimizer.matcher.Pattern.typeOf;
 
 /**

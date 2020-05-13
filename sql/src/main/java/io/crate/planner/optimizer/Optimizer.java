@@ -25,6 +25,7 @@ package io.crate.planner.optimizer;
 import io.crate.common.collections.Lists2;
 import io.crate.metadata.Functions;
 import io.crate.metadata.TransactionContext;
+import io.crate.metadata.settings.session.SessionSettingProvider;
 import io.crate.planner.operators.LogicalPlan;
 import io.crate.planner.optimizer.matcher.Captures;
 import io.crate.planner.optimizer.matcher.Match;
@@ -34,6 +35,7 @@ import org.apache.logging.log4j.Logger;
 import org.elasticsearch.Version;
 
 import java.util.List;
+import java.util.ServiceLoader;
 import java.util.function.Supplier;
 
 public class Optimizer {
@@ -43,9 +45,11 @@ public class Optimizer {
     private final List<Rule<?>> rules;
     private final Supplier<Version> minNodeVersionInCluster;
     private final Functions functions;
+    private final LoadedRules loadedRules = initializeLoadedRules();
+
 
     public Optimizer(Functions functions, Supplier<Version> minNodeVersionInCluster, List<Class<? extends Rule<?>>> rulesToInclude) {
-        this.rules = new LoadedRules().getRules(rulesToInclude);
+        this.rules = loadedRules.rules(rulesToInclude);
         this.minNodeVersionInCluster = minNodeVersionInCluster;
         this.functions = functions;
     }
@@ -101,4 +105,14 @@ public class Optimizer {
             : "Optimizer reached 10_000 iterations safety guard. This is an indication of a broken rule that matches again and again";
         return node;
     }
+
+    private static LoadedRules initializeLoadedRules() {
+        for (var sessionSettingProvider : ServiceLoader.load(SessionSettingProvider.class)) {
+            if (sessionSettingProvider instanceof LoadedRules) {
+                return (LoadedRules) sessionSettingProvider;
+            }
+        }
+        throw new Error("LoadedRules not found");
+    }
+
 }

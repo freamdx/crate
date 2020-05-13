@@ -31,8 +31,6 @@ import io.crate.planner.optimizer.matcher.Captures;
 import io.crate.planner.optimizer.matcher.Pattern;
 import io.crate.statistics.TableStats;
 
-import java.util.concurrent.atomic.AtomicBoolean;
-
 import static io.crate.planner.optimizer.matcher.Pattern.typeOf;
 import static io.crate.planner.optimizer.matcher.Patterns.source;
 
@@ -55,12 +53,12 @@ public class RewriteInsertFromSubQueryToInsertFromValues implements Rule<Insert>
 
     @Override
     public boolean isEnabled() {
-        return enabled.get();
+        return enabled;
     }
 
     @Override
     public void setEnabled(boolean enabled) {
-        this.enabled.set(enabled);
+        this.enabled = enabled;
     }
 
     @Override

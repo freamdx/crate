@@ -51,17 +51,19 @@ import io.crate.planner.optimizer.rule.RewriteFilterOnOuterJoinToInnerJoin;
 import io.crate.planner.optimizer.rule.RewriteGroupByKeysLimitToTopNDistinct;
 import io.crate.planner.optimizer.rule.RewriteToQueryThenFetch;
 import io.crate.types.DataTypes;
+import org.elasticsearch.common.inject.Singleton;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 
+@Singleton
 public class LoadedRules implements SessionSettingProvider {
 
     private static final String OPTIMIZER_SETTING_PREFIX = "optimizer_";
 
-    private static final List<Rule<?>> RULES = List.of(
+    private final List<Rule<?>> RULES = List.of(
         new RemoveRedundantFetchOrEval(),
         new MergeAggregateAndCollectToCount(),
         new MergeFilters(),
@@ -99,8 +101,7 @@ public class LoadedRules implements SessionSettingProvider {
         var optimizerRuleName = OPTIMIZER_SETTING_PREFIX + CaseFormat.UPPER_CAMEL.to(CaseFormat.LOWER_UNDERSCORE, simpleName);
         return new SessionSetting<>(
             optimizerRuleName,
-            objects -> {
-            },
+            objects -> { },
             objects -> DataTypes.BOOLEAN.value(objects[0]),
             (sessionContext, activateRule) -> rule.setEnabled(activateRule),
             s -> String.valueOf(rule.isEnabled()),
@@ -110,7 +111,7 @@ public class LoadedRules implements SessionSettingProvider {
         );
     }
 
-    public final List<Rule<?>> getRules(List<Class<? extends Rule<?>>> includedRules) {
+    public final List<Rule<?>> rules(List<Class<? extends Rule<?>>> includedRules) {
         if (includedRules.isEmpty()) {
             return List.of();
         }

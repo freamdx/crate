@@ -41,7 +41,6 @@ import io.crate.planner.optimizer.matcher.Pattern;
 import io.crate.statistics.TableStats;
 import io.crate.types.DataTypes;
 
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * A rule to rewrite a `SELECT DISTINCT [...] LIMIT n` to use a special TopNDistinct operator.

@@ -37,7 +37,6 @@ import io.crate.planner.optimizer.matcher.Pattern;
 import io.crate.statistics.TableStats;
 
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
 import static io.crate.planner.optimizer.matcher.Pattern.typeOf;
