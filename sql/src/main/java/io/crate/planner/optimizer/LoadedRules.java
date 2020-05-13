@@ -61,7 +61,7 @@ public class LoadedRules implements SessionSettingProvider {
 
     private static final String OPTIMIZER_RULE = "optimizer_";
 
-    private static final List<Rule<?>> rules = List.of(
+    private static final List<Rule<?>> RULES = List.of(
         new RemoveRedundantFetchOrEval(),
         new MergeAggregateAndCollectToCount(),
         new MergeFilters(),
@@ -89,7 +89,7 @@ public class LoadedRules implements SessionSettingProvider {
 
     @Override
     public List<SessionSetting<?>> sessionSettings() {
-        return Lists2.map(rules, this::buildRuleSessionSetting);
+        return Lists2.map(RULES, this::buildRuleSessionSetting);
     }
 
     @VisibleForTesting
@@ -112,11 +112,11 @@ public class LoadedRules implements SessionSettingProvider {
 
     public final List<Rule<?>> getRules(List<Class<? extends Rule<?>>> includedRules) {
         if (includedRules.isEmpty()) {
-            return rules;
+            return RULES;
         }
         var includes = Set.of(includedRules);
         var result = new ArrayList<Rule<?>>(includes.size());
-        for (var rule : rules) {
+        for (var rule : RULES) {
             if (includes.contains(rule.getClass())) {
                 result.add(rule);
             }
