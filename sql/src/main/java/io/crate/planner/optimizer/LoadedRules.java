@@ -26,7 +26,6 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.CaseFormat;
 import io.crate.common.collections.Lists2;
 import io.crate.metadata.settings.session.SessionSetting;
-import io.crate.metadata.settings.session.SessionSettingProvider;
 import io.crate.planner.operators.RewriteInsertFromSubQueryToInsertFromValues;
 import io.crate.planner.optimizer.rule.DeduplicateOrder;
 import io.crate.planner.optimizer.rule.MergeAggregateAndCollectToCount;
@@ -59,11 +58,11 @@ import java.util.List;
 import java.util.Locale;
 
 @Singleton
-public class LoadedRules implements SessionSettingProvider {
+public class LoadedRules {
 
     private static final String OPTIMIZER_SETTING_PREFIX = "optimizer_";
 
-    private final List<Rule<?>> RULES = List.of(
+    private final List<Rule<?>> rules = List.of(
         new RemoveRedundantFetchOrEval(),
         new MergeAggregateAndCollectToCount(),
         new MergeFilters(),
@@ -89,9 +88,8 @@ public class LoadedRules implements SessionSettingProvider {
         new RewriteToQueryThenFetch()
     );
 
-    @Override
     public List<SessionSetting<?>> sessionSettings() {
-        return Lists2.map(RULES, this::buildRuleSessionSetting);
+        return Lists2.map(rules, this::buildRuleSessionSetting);
     }
 
     @VisibleForTesting
@@ -111,13 +109,13 @@ public class LoadedRules implements SessionSettingProvider {
         );
     }
 
-    public final List<Rule<?>> rules(List<Class<? extends Rule<?>>> includedRules) {
+    public List<Rule<?>> rules(List<Class<? extends Rule<?>>> includedRules) {
         if (includedRules.isEmpty()) {
             return List.of();
         }
         var includes = new HashSet<>(includedRules);
         var result = new ArrayList<Rule<?>>(includedRules.size());
-        for (var rule : RULES) {
+        for (var rule : rules) {
             if (includes.contains(rule.getClass())) {
                 result.add(rule);
             }

@@ -62,6 +62,7 @@ import io.crate.planner.ExecutionPlan;
 import io.crate.planner.PlannerContext;
 import io.crate.planner.SubqueryPlanner;
 import io.crate.planner.consumer.InsertFromSubQueryPlanner;
+import io.crate.planner.optimizer.LoadedRules;
 import io.crate.planner.optimizer.Optimizer;
 import io.crate.planner.optimizer.rule.DeduplicateOrder;
 import io.crate.planner.optimizer.rule.MergeAggregateAndCollectToCount;
@@ -114,10 +115,11 @@ public class LogicalPlanner {
     private final Optimizer writeOptimizer;
     private final Optimizer fetchOptimizer;
 
-    public LogicalPlanner(Functions functions, TableStats tableStats, Supplier<Version> minNodeVersionInCluster) {
+    public LogicalPlanner(Functions functions, TableStats tableStats, Supplier<Version> minNodeVersionInCluster, LoadedRules loadedRules) {
         this.optimizer = new Optimizer(
             functions,
             minNodeVersionInCluster,
+            loadedRules,
             List.of(
                 RemoveRedundantFetchOrEval.class,
                 MergeAggregateAndCollectToCount.class,
@@ -145,11 +147,13 @@ public class LogicalPlanner {
         this.fetchOptimizer = new Optimizer(
             functions,
             minNodeVersionInCluster,
+            loadedRules,
             List.of(RewriteToQueryThenFetch.class)
             );
         this.writeOptimizer = new Optimizer(
             functions,
             minNodeVersionInCluster,
+            loadedRules,
             List.of(RewriteInsertFromSubQueryToInsertFromValues.class)
             );
         this.tableStats = tableStats;

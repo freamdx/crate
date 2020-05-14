@@ -39,6 +39,7 @@ import io.crate.planner.SubqueryPlanner;
 import io.crate.planner.node.dql.Collect;
 import io.crate.planner.node.dql.join.Join;
 import io.crate.planner.node.dql.join.JoinType;
+import io.crate.planner.optimizer.LoadedRules;
 import io.crate.statistics.Stats;
 import io.crate.statistics.TableStats;
 import io.crate.test.integration.CrateDummyClusterServiceUnitTest;
@@ -67,6 +68,7 @@ import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.collection.IsIterableContainingInOrder.contains;
+import static org.mockito.Mockito.mock;
 
 public class JoinTest extends CrateDummyClusterServiceUnitTest {
 
@@ -77,6 +79,7 @@ public class JoinTest extends CrateDummyClusterServiceUnitTest {
     private ProjectionBuilder projectionBuilder = new ProjectionBuilder(functions);
     private PlannerContext plannerCtx;
     private CoordinatorTxnCtx txnCtx = CoordinatorTxnCtx.systemTransactionContext();
+    private LoadedRules loadedRules = new LoadedRules();
 
     @Before
     public void setUpExecutor() throws IOException {
@@ -100,7 +103,8 @@ public class JoinTest extends CrateDummyClusterServiceUnitTest {
         LogicalPlanner logicalPlanner = new LogicalPlanner(
             functions,
             tableStats,
-            () -> clusterService.state().nodes().getMinNodeVersion()
+            () -> clusterService.state().nodes().getMinNodeVersion(),
+            loadedRules
         );
         SubqueryPlanner subqueryPlanner = new SubqueryPlanner((s) -> logicalPlanner.planSubSelect(s, plannerCtx));
         return JoinPlanBuilder.buildJoinTree(
@@ -190,7 +194,8 @@ public class JoinTest extends CrateDummyClusterServiceUnitTest {
         LogicalPlanner logicalPlanner = new LogicalPlanner(
             functions,
             tableStats,
-            () -> clusterService.state().nodes().getMinNodeVersion()
+            () -> clusterService.state().nodes().getMinNodeVersion(),
+            loadedRules
         );
         SubqueryPlanner subqueryPlanner = new SubqueryPlanner((s) -> logicalPlanner.planSubSelect(s, context));
         LogicalPlan operator = JoinPlanBuilder.buildJoinTree(
@@ -220,7 +225,8 @@ public class JoinTest extends CrateDummyClusterServiceUnitTest {
         LogicalPlanner logicalPlanner = new LogicalPlanner(
             functions,
             tableStats,
-            () -> clusterService.state().nodes().getMinNodeVersion()
+            () -> clusterService.state().nodes().getMinNodeVersion(),
+            new LoadedRules()
         );
         LogicalPlan plan = logicalPlanner.plan(e.analyze("select users.id from users, locations " +
                                                          "where users.id = locations.id order by users.id"), context);
@@ -413,7 +419,8 @@ public class JoinTest extends CrateDummyClusterServiceUnitTest {
         LogicalPlanner logicalPlanner = new LogicalPlanner(
             functions,
             tableStats,
-            () -> clusterService.state().nodes().getMinNodeVersion()
+            () -> clusterService.state().nodes().getMinNodeVersion(),
+            loadedRules
         );
         LogicalPlan operator = logicalPlanner.plan(mss, plannerCtx);
         ExecutionPlan build = operator.build(plannerCtx, projectionBuilder, -1, 0, null,
@@ -432,7 +439,8 @@ public class JoinTest extends CrateDummyClusterServiceUnitTest {
         LogicalPlanner logicalPlanner = new LogicalPlanner(
             functions,
             new TableStats(),
-            () -> clusterService.state().nodes().getMinNodeVersion()
+            () -> clusterService.state().nodes().getMinNodeVersion(),
+            loadedRules
         );
         LogicalPlan join = logicalPlanner.plan(mss, plannerCtx);
 
