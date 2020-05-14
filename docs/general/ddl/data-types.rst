@@ -82,27 +82,109 @@ A basic boolean type. Accepting ``true`` and ``false`` as values. Example::
     cr> drop table my_bool_table;
     DROP OK, 1 row affected (... sec)
 
+.. _character-data-types:
+
+Character Types
+===============
+
+The general-purpose character data types available in CrateDB.
+
+Columns of below listed character data types can also be analyzed. By default
+the :ref:`plain <plain-analyzer>` analyzer is used. See
+:ref:`sql_ddl_index_fulltext`.
+
+.. _data-type-varchar:
+
+``character varying(n)``, ``varchar(n)``
+----------------------------------------
+
+The ``character varying(n)`` or ``varchar(n)`` character data types represent
+variable length strings. All unicode characters are allowed.
+
+The mandatory length specification ``n`` is an unsigned, positive `integer
+<numeric types_>`_ that defines the maximum length, in characters, of the
+values that have to be stored ot cast. The minimum length is ``1``. The
+maximum length is defined by the upper `integer <numeric types_>`_ range.
+
+An attempt to store a longer string into a column of these types will result
+in an error.
+
+::
+
+    cr> CREATE TABLE users (id varchar(2), name varchar));
+    CREATE OK, 1 row affected (... sec)
+
+::
+
+    cr> INSERT INTO users (id, name) VALUES ('1361', 'john doe')
+    SQLActionException[value too long for type character varying(2)]
+
+Unless the excess characters are all spaces, in which case the string will
+be truncated to the defined length.
+
+::
+
+    cr> INSERT INTO users (id, name) VALUES ('1   ', 'john doe')
+    INSERT OK, 1 row affected (... sec)
+
+::
+
+    cr> SELECT name, length(name) FROM users;
+    +----+-------------------+
+    | id | char_length(name) |
+    +----+-------------------+
+    | 1  |                 2 |
+    +----+-------------------+
+    SELECT 1 row in set (0.080 sec)
+
+If a value is explicitly cast to ``varying(n)``, then an over-length value
+will be truncated to n characters without raising an error.
+
+::
+
+    cr> SELECT 'john doe'::varying(4) AS name;
+    +------+
+    | name |
+    +------+
+    | john |
+    +------+
+    SELECT 1 row in set (... sec)
+
+``character varying`` and ``varchar`` without the length specifier are
+aliases for the `text <data-type-text>`_ data type. See ` type aliases
+<data-type-aliases>`_.
+
+.. hide:
+
+    cr> DROP TABLE users;
+    DROP OK, 1 row affected (... sec)
+
 .. _data-type-text:
 
 ``text``
-========
+--------
 
 A text-based basic type containing one or more characters. All unicode
-characters are allowed. Example::
+characters are allowed.
 
-    cr> create table my_table2 (
-    ...   first_column text
-    ... );
+::
+
+    cr> CREATE TABLE users (name text);
     CREATE OK, 1 row affected (... sec)
 
-Columns of type text can also be analyzed. By default the :ref:`plain
-<plain-analyzer>` analyzer is used. See :ref:`sql_ddl_index_fulltext`.
+.. hide:
+
+    cr> DROP TABLE users;
+    DROP OK, 1 row affected (... sec)
 
 .. NOTE::
 
    Maximum indexed string length is restricted to 32766 bytes, when encoded
    with UTF-8 unless the string is analyzed using full text or indexing and
    the usage of the :ref:`ddl-storage-columnstore` is disabled.
+
+.. NOTE::
+   There is no difference in storage costs among all character data types.
 
 Numeric types
 =============
