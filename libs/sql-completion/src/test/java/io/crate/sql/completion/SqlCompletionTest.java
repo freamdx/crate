@@ -21,4 +21,10 @@ public class SqlCompletionTest {
         var candidates = completion.getCandidates("SEL");
         assertThat(candidates, Matchers.contains(is("SELECT")));
     }
+
+    @Test
+    public void test_complete_identifier_in_select_list() throws Exception {
+        var candidates = completion.getCandidates("SELECT info");
+        assertThat(candidates, Matchers.contains(is("information_schema")));
+    }
 }

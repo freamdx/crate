@@ -23,6 +23,7 @@
 package io.crate.sql.completion;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 
 import org.antlr.v4.runtime.BaseErrorListener;
@@ -31,8 +32,13 @@ import org.antlr.v4.runtime.CommonTokenStream;
 import org.antlr.v4.runtime.RecognitionException;
 import org.antlr.v4.runtime.Recognizer;
 import org.antlr.v4.runtime.Vocabulary;
+import org.antlr.v4.runtime.atn.ATNState;
+import org.antlr.v4.runtime.atn.AtomTransition;
+import org.antlr.v4.runtime.atn.SetTransition;
+import org.antlr.v4.runtime.atn.Transition;
 
 import io.crate.sql.parser.CaseInsensitiveStream;
+import io.crate.sql.parser.antlr.v4.SqlBaseBaseVisitor;
 import io.crate.sql.parser.antlr.v4.SqlBaseLexer;
 import io.crate.sql.parser.antlr.v4.SqlBaseParser;
 
@@ -73,7 +79,63 @@ public class SqlCompletion {
         lexer.addErrorListener(listener);
         parser.removeErrorListeners();
         parser.addErrorListener(listener);
-        parser.singleStatement();
+        var tree = parser.singleStatement();
+        tree.accept(new SqlBaseBaseVisitor<>() {
+            @Override
+            public Object visitTableName(SqlBaseParser.TableNameContext ctx) {
+                return super.visitTableName(ctx);
+            }
+        });
+        System.out.println("tokens:");
+        for (var token : lexer.getAllTokens()) {
+            System.out.println(token);
+        }
+        var atn = lexer.getATN();
+        HashSet<Integer> alreadyPassed = new HashSet<>();
+        ArrayList<String> history = new ArrayList<>();
+        process(
+            SqlBaseLexer.ruleNames,
+            lexer.getVocabulary(),
+            lexer.getATN().states.get(0),
+            alreadyPassed,
+            history
+        );
+        for (var h : history) {
+            System.out.println("history:" + h);
+        }
         return candidates;
+    }
+
+    private void process(String[] ruleNames,
+                         Vocabulary vocabulary,
+                         ATNState state,
+                         HashSet<Integer> alreadyPassed,
+                         ArrayList<String> history) {
+        if (state.nextTokenWithinRule != null) {
+            history.add(state.nextTokenWithinRule.toString(vocabulary));
+        }
+        for (Transition transition : state.getTransitions()) {
+            if (transition.isEpsilon()) {
+                if (alreadyPassed.contains(transition.target.stateNumber)) {
+                    continue;
+                }
+                alreadyPassed.add(transition.target.stateNumber);
+                process(ruleNames, vocabulary, transition.target, alreadyPassed, history);
+            } else if (transition instanceof AtomTransition) {
+                AtomTransition atom = (AtomTransition) transition;
+                if (alreadyPassed.contains(transition.target.stateNumber)) {
+                    continue;
+                }
+                alreadyPassed.add(transition.target.stateNumber);
+                process(ruleNames, vocabulary, atom.target, alreadyPassed, history);
+            } else if (transition instanceof SetTransition) {
+                SetTransition set = (SetTransition) transition;
+                if (alreadyPassed.contains(transition.target.stateNumber)) {
+                    continue;
+                }
+                alreadyPassed.add(transition.target.stateNumber);
+                process(ruleNames, vocabulary, set.target, alreadyPassed, history);
+            }
+        }
     }
 }
