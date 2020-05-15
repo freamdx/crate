@@ -141,6 +141,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
+import java.util.Set;
 import java.util.UUID;
 
 import static io.crate.analyze.TableDefinitions.DEEPLY_NESTED_TABLE_DEFINITION;
@@ -224,7 +225,7 @@ public class SQLExecutor {
         private boolean hasValidLicense = true;
         private Schemas schemas;
         private LoadedRules loadedRules = new LoadedRules();
-        private SessionSettingRegistry sessionSettingRegistry = new SessionSettingRegistry(loadedRules);
+        private SessionSettingRegistry sessionSettingRegistry = new SessionSettingRegistry(Set.of(loadedRules));
 
         private Builder(ClusterService clusterService, int numNodes, Random random) {
             Preconditions.checkArgument(numNodes >= 1, "Must have at least 1 node");

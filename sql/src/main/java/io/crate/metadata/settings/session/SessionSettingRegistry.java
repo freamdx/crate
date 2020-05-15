@@ -32,6 +32,7 @@ import org.elasticsearch.common.inject.Singleton;
 
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 
 import static io.crate.metadata.SearchPath.createSearchPathFrom;
@@ -47,7 +48,7 @@ public class SessionSettingRegistry {
     private final Map<String, SessionSetting<?>> settings;
 
     @Inject
-    public SessionSettingRegistry(SessionSettingProvider serverSessionSettingProvider) {
+    public SessionSettingRegistry(Set<SessionSettingProvider> sessionSettingProviders) {
         var builder = ImmutableMap.<String, SessionSetting<?>>builder()
             .put(SEARCH_PATH_KEY,
                  new SessionSetting<>(
@@ -113,8 +114,12 @@ public class SessionSettingRegistry {
                      DataTypes.STRING.getName()
                  )
             );
-        serverSessionSettingProvider.sessionSettings().forEach(s -> builder.put(s.name(), s));
-        this.settings = builder.build();
+        for (var providers : sessionSettingProviders) {
+            for (var setting : providers.sessionSettings()) {
+                builder.put(setting.name(), setting);
+            }
+        }
+        this.settings = builder.build();    
     }
 
     public Map<String, SessionSetting<?>> settings() {

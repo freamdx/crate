@@ -35,6 +35,7 @@ import org.junit.rules.ExpectedException;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -62,13 +63,13 @@ public class SessionSettingRegistryTest {
     public void testMaxIndexKeysSessionSettingCannotBeChanged() {
         expectedException.expect(UnsupportedOperationException.class);
         expectedException.expectMessage("\"max_index_keys\" cannot be changed.");
-        SessionSetting<?> setting = new SessionSettingRegistry(mock(SessionSettingProvider.class)).settings().get(SessionSettingRegistry.MAX_INDEX_KEYS);
+        SessionSetting<?> setting = new SessionSettingRegistry(Set.of(new LoadedRules())).settings().get(SessionSettingRegistry.MAX_INDEX_KEYS);
         setting.apply(sessionContext, generateInput("32"), eval);
     }
 
     @Test
     public void testHashJoinSessionSetting() {
-        SessionSetting<?> setting = new SessionSettingRegistry(mock(SessionSettingProvider.class)).settings().get(SessionSettingRegistry.HASH_JOIN_KEY);
+        SessionSetting<?> setting = new SessionSettingRegistry(Set.of(new LoadedRules())).settings().get(SessionSettingRegistry.HASH_JOIN_KEY);
         assertBooleanNonEmptySetting(sessionContext::isHashJoinEnabled, setting, true);
     }
 

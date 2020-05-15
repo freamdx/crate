@@ -427,4 +427,11 @@ public class ShowIntegrationTest extends SQLTransportIntegrationTest {
             )
         );
     }
-}
+
+    @Test
+    public void test_optimizer_rules() {
+        execute("show optimizer_rewrite_insert_from_sub_query_to_insert_from_values");
+
+
+    }
+ }
