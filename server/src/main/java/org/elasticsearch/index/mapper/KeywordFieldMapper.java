@@ -32,7 +32,6 @@ import org.apache.lucene.search.NormsFieldExistsQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.util.BytesRef;
-import javax.annotation.Nullable;
 import org.elasticsearch.common.lucene.Lucene;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.XContentBuilder;
@@ -45,6 +44,7 @@ import org.elasticsearch.index.fielddata.IndexFieldData;
 import org.elasticsearch.index.fielddata.plain.DocValuesIndexFieldData;
 import org.elasticsearch.index.query.QueryShardContext;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
@@ -96,6 +96,14 @@ public final class KeywordFieldMapper extends FieldMapper {
                 throw new IllegalArgumentException("[ignore_above] must be positive, got " + ignoreAbove);
             }
             this.ignoreAbove = ignoreAbove;
+            return this;
+        }
+
+        public Builder lengthLimit(int lengthLimit) {
+            if (lengthLimit < 0) {
+                throw new IllegalArgumentException("[legnth_limit] must be positive, got " + lengthLimit);
+            }
+            fieldType().setLengthLimit(lengthLimit);
             return this;
         }
 
@@ -175,6 +183,9 @@ public final class KeywordFieldMapper extends FieldMapper {
                 } else if (propName.equals("ignore_above")) {
                     builder.ignoreAbove(XContentMapValues.nodeIntegerValue(propNode, -1));
                     iterator.remove();
+                } else if (propName.equals("length_limit")) {
+                    builder.lengthLimit(XContentMapValues.nodeIntegerValue(propNode));
+                    iterator.remove();
                 } else if (propName.equals("norms")) {
                     TypeParsers.parseNorms(builder, name, propNode);
                     iterator.remove();
@@ -199,6 +210,7 @@ public final class KeywordFieldMapper extends FieldMapper {
 
         private NamedAnalyzer normalizer = null;
         private boolean splitQueriesOnWhitespace;
+        private Integer lengthLimit;
 
         public KeywordFieldType() {
             setIndexAnalyzer(Lucene.KEYWORD_ANALYZER);
@@ -208,21 +220,12 @@ public final class KeywordFieldMapper extends FieldMapper {
         protected KeywordFieldType(KeywordFieldType ref) {
             super(ref);
             this.normalizer = ref.normalizer;
+            this.lengthLimit = ref.lengthLimit;
             this.splitQueriesOnWhitespace = ref.splitQueriesOnWhitespace;
         }
 
         public KeywordFieldType clone() {
             return new KeywordFieldType(this);
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (super.equals(o) == false) {
-                return false;
-            }
-            KeywordFieldType other = (KeywordFieldType) o;
-            return Objects.equals(normalizer, other.normalizer) &&
-                splitQueriesOnWhitespace == other.splitQueriesOnWhitespace;
         }
 
         @Override
@@ -241,8 +244,25 @@ public final class KeywordFieldMapper extends FieldMapper {
         }
 
         @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            if (!super.equals(o)) {
+                return false;
+            }
+            KeywordFieldType that = (KeywordFieldType) o;
+            return splitQueriesOnWhitespace == that.splitQueriesOnWhitespace &&
+                   Objects.equals(normalizer, that.normalizer) &&
+                   Objects.equals(lengthLimit, that.lengthLimit);
+        }
+
+        @Override
         public int hashCode() {
-            return 31 * super.hashCode() + Objects.hash(normalizer, splitQueriesOnWhitespace);
+            return Objects.hash(super.hashCode(), normalizer, splitQueriesOnWhitespace, lengthLimit);
         }
 
         @Override
@@ -261,6 +281,10 @@ public final class KeywordFieldMapper extends FieldMapper {
 
         public boolean splitQueriesOnWhitespace() {
             return splitQueriesOnWhitespace;
+        }
+
+        public void setLengthLimit(Integer lengthLimit) {
+            this.lengthLimit = lengthLimit;
         }
 
         public void setSplitQueriesOnWhitespace(boolean splitQueriesOnWhitespace) {
@@ -325,6 +349,7 @@ public final class KeywordFieldMapper extends FieldMapper {
     }
 
     private int ignoreAbove;
+    private Integer lengthLimit;
 
     protected KeywordFieldMapper(String simpleName,
                                  Integer position,
@@ -420,7 +445,13 @@ public final class KeywordFieldMapper extends FieldMapper {
     @Override
     protected void doMerge(Mapper mergeWith, boolean updateAllTypes) {
         super.doMerge(mergeWith, updateAllTypes);
+        var mw = ((KeywordFieldMapper) mergeWith);
         this.ignoreAbove = ((KeywordFieldMapper) mergeWith).ignoreAbove;
+        if (!Objects.equals(this.lengthLimit, mw.lengthLimit)) {
+            throw new IllegalArgumentException(
+                "mapper [" + name() + "] has different length_limit settings, current ["
+                + this.fieldType().lengthLimit + "], merged [" + mw.fieldType().lengthLimit + "]");
+        }
     }
 
     @Override
@@ -433,6 +464,10 @@ public final class KeywordFieldMapper extends FieldMapper {
 
         if (includeDefaults || ignoreAbove != Defaults.IGNORE_ABOVE) {
             builder.field("ignore_above", ignoreAbove);
+        }
+
+        if (includeDefaults || lengthLimit != null) {
+            builder.field("length_limit", lengthLimit);
         }
 
         if (fieldType().normalizer() != null) {

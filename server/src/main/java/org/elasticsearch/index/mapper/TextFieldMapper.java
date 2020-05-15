@@ -47,6 +47,7 @@ import org.elasticsearch.index.fielddata.IndexFieldData;
 import org.elasticsearch.index.fielddata.plain.PagedBytesIndexFieldData;
 import org.elasticsearch.index.query.QueryShardContext;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -60,6 +61,7 @@ import static org.elasticsearch.index.mapper.TypeParsers.parseTextField;
 public class TextFieldMapper extends FieldMapper {
 
     public static final String CONTENT_TYPE = "text";
+
     private static final int POSITION_INCREMENT_GAP_USE_ANALYZER = -1;
 
     public static final String FAST_PHRASE_SUFFIX = "._index_phrase";
@@ -87,6 +89,7 @@ public class TextFieldMapper extends FieldMapper {
     public static class Builder extends FieldMapper.Builder<Builder, TextFieldMapper> {
 
         private int positionIncrementGap = POSITION_INCREMENT_GAP_USE_ANALYZER;
+        private Integer lengthLimit;
         private PrefixFieldType prefixFieldType;
 
         public Builder(String name) {
@@ -114,6 +117,14 @@ public class TextFieldMapper extends FieldMapper {
 
         public Builder indexPhrases(boolean indexPhrases) {
             fieldType().setIndexPhrases(indexPhrases);
+            return builder;
+        }
+
+        public Builder lengthLimit(Integer lengthLimit) {
+            if (lengthLimit < 0) {
+                throw new IllegalArgumentException("[legnth_limit] must be positive, got " + lengthLimit);
+            }
+            this.lengthLimit = lengthLimit;
             return builder;
         }
 
@@ -202,6 +213,7 @@ public class TextFieldMapper extends FieldMapper {
                 fieldType(),
                 defaultFieldType,
                 positionIncrementGap,
+                lengthLimit,
                 prefixMapper,
                 context.indexSettings(),
                 multiFieldsBuilder.build(this, context),
@@ -248,6 +260,9 @@ public class TextFieldMapper extends FieldMapper {
                         Defaults.INDEX_PREFIX_MAX_CHARS);
                     builder.indexPrefixes(minChars, maxChars);
                     DocumentMapperParser.checkNoRemainingFields(propName, indexPrefix, parserContext.indexVersionCreated());
+                    iterator.remove();
+                } else if (propName.equals("length_limit")) {
+                    builder.lengthLimit(XContentMapValues.nodeIntegerValue(propNode));
                     iterator.remove();
                 } else if (propName.equals("index_phrases")) {
                     builder.indexPhrases(XContentMapValues.nodeBooleanValue(propNode, "index_phrases"));
@@ -406,7 +421,6 @@ public class TextFieldMapper extends FieldMapper {
 
         @Override
         public int hashCode() {
-
             return Objects.hash(super.hashCode(), minChars, maxChars);
         }
     }
@@ -460,6 +474,8 @@ public class TextFieldMapper extends FieldMapper {
         private double fielddataMinFrequency;
         private double fielddataMaxFrequency;
         private int fielddataMinSegmentSize;
+        @Nullable
+        private Integer lengthLimit;
         private PrefixFieldType prefixFieldType;
         private boolean indexPhrases = false;
 
@@ -477,6 +493,7 @@ public class TextFieldMapper extends FieldMapper {
             this.fielddataMinFrequency = ref.fielddataMinFrequency;
             this.fielddataMaxFrequency = ref.fielddataMaxFrequency;
             this.fielddataMinSegmentSize = ref.fielddataMinSegmentSize;
+            this.lengthLimit = ref.lengthLimit;
             this.indexPhrases = ref.indexPhrases;
             if (ref.prefixFieldType != null) {
                 this.prefixFieldType = ref.prefixFieldType.clone();
@@ -489,22 +506,36 @@ public class TextFieldMapper extends FieldMapper {
 
         @Override
         public boolean equals(Object o) {
-            if (super.equals(o) == false) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            if (!super.equals(o)) {
                 return false;
             }
             TextFieldType that = (TextFieldType) o;
-            return fielddata == that.fielddata
-                    && indexPhrases == that.indexPhrases
-                    && Objects.equals(prefixFieldType, that.prefixFieldType)
-                    && fielddataMinFrequency == that.fielddataMinFrequency
-                    && fielddataMaxFrequency == that.fielddataMaxFrequency
-                    && fielddataMinSegmentSize == that.fielddataMinSegmentSize;
+            return fielddata == that.fielddata &&
+                   Double.compare(that.fielddataMinFrequency, fielddataMinFrequency) == 0 &&
+                   Double.compare(that.fielddataMaxFrequency, fielddataMaxFrequency) == 0 &&
+                   fielddataMinSegmentSize == that.fielddataMinSegmentSize &&
+                   indexPhrases == that.indexPhrases &&
+                   Objects.equals(lengthLimit, that.lengthLimit) &&
+                   Objects.equals(prefixFieldType, that.prefixFieldType);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(super.hashCode(), fielddata, indexPhrases, prefixFieldType,
-                    fielddataMinFrequency, fielddataMaxFrequency, fielddataMinSegmentSize);
+            return Objects.hash(
+                super.hashCode(),
+                fielddata,
+                fielddataMinFrequency,
+                fielddataMaxFrequency,
+                fielddataMinSegmentSize,
+                lengthLimit,
+                prefixFieldType,
+                indexPhrases);
         }
 
         @Override
@@ -672,10 +703,10 @@ public class TextFieldMapper extends FieldMapper {
             }
             return new PagedBytesIndexFieldData.Builder(fielddataMinFrequency, fielddataMaxFrequency, fielddataMinSegmentSize);
         }
-
     }
 
     private int positionIncrementGap;
+    private Integer lengthLimit;
     private PrefixFieldMapper prefixFieldMapper;
     private PhraseFieldMapper phraseFieldMapper;
 
@@ -685,6 +716,7 @@ public class TextFieldMapper extends FieldMapper {
                               TextFieldType fieldType,
                               MappedFieldType defaultFieldType,
                               int positionIncrementGap,
+                              Integer lengthLimit,
                               PrefixFieldMapper prefixFieldMapper,
                               Settings indexSettings,
                               MultiFields multiFields,
@@ -696,6 +728,7 @@ public class TextFieldMapper extends FieldMapper {
             throw new IllegalArgumentException("Cannot enable fielddata on a [text] field that is not indexed: [" + name() + "]");
         }
         this.positionIncrementGap = positionIncrementGap;
+        this.lengthLimit = lengthLimit;
         this.prefixFieldMapper = prefixFieldMapper;
         this.phraseFieldMapper = fieldType.indexPhrases ? new PhraseFieldMapper(new PhraseFieldType(fieldType), indexSettings) : null;
     }
@@ -765,6 +798,10 @@ public class TextFieldMapper extends FieldMapper {
         } else if (this.fieldType().indexPhrases != mw.fieldType().indexPhrases) {
             throw new IllegalArgumentException("mapper [" + name() + "] has different index_phrases settings, current ["
                 + this.fieldType().indexPhrases + "], merged [" + mw.fieldType().indexPhrases + "]");
+        } else if (!Objects.equals(this.fieldType().lengthLimit, mw.fieldType().lengthLimit)) {
+            throw new IllegalArgumentException(
+                "mapper [" + name() + "] has different length_limit settings, current ["
+                + this.fieldType().lengthLimit + "], merged [" + mw.fieldType().lengthLimit + "]");
         }
     }
 
@@ -802,6 +839,9 @@ public class TextFieldMapper extends FieldMapper {
                 }
                 builder.endObject();
             }
+        }
+        if (includeDefaults || lengthLimit != null) {
+            builder.field("length_limit", lengthLimit);
         }
         if (fieldType().prefixFieldType != null) {
             fieldType().prefixFieldType.doXContent(builder);
