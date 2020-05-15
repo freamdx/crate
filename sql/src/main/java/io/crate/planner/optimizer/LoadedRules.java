@@ -26,6 +26,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.CaseFormat;
 import io.crate.common.collections.Lists2;
 import io.crate.metadata.settings.session.SessionSetting;
+import io.crate.metadata.settings.session.SessionSettingProvider;
 import io.crate.planner.operators.RewriteInsertFromSubQueryToInsertFromValues;
 import io.crate.planner.optimizer.rule.DeduplicateOrder;
 import io.crate.planner.optimizer.rule.MergeAggregateAndCollectToCount;
@@ -58,7 +59,7 @@ import java.util.List;
 import java.util.Locale;
 
 @Singleton
-public class LoadedRules {
+public class LoadedRules implements SessionSettingProvider {
 
     private static final String OPTIMIZER_SETTING_PREFIX = "optimizer_";
 
@@ -88,20 +89,21 @@ public class LoadedRules {
         new RewriteToQueryThenFetch()
     );
 
+    @Override
     public List<SessionSetting<?>> sessionSettings() {
         return Lists2.map(rules, this::buildRuleSessionSetting);
     }
 
     @VisibleForTesting
     SessionSetting<?> buildRuleSessionSetting(Rule<?> rule) {
-        Class<? extends Rule> clazz = rule.getClass();
+        var clazz = rule.getClass();
         var simpleName = clazz.getSimpleName();
         var optimizerRuleName = OPTIMIZER_SETTING_PREFIX + CaseFormat.UPPER_CAMEL.to(CaseFormat.LOWER_UNDERSCORE, simpleName);
         return new SessionSetting<>(
             optimizerRuleName,
             objects -> { },
             objects -> DataTypes.BOOLEAN.value(objects[0]),
-            (sessionContext, activateRule) -> rule.setEnabled(activateRule),
+            (sessionContext, enabled) -> rule.setEnabled(enabled),
             s -> String.valueOf(rule.isEnabled()),
             () -> String.valueOf(true),
             String.format(Locale.ENGLISH, "Indicates if the optimizer rule %s is activated.", simpleName),

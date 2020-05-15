@@ -48,7 +48,7 @@ public class SessionSettingRegistry {
     private final Map<String, SessionSetting<?>> settings;
 
     @Inject
-    public SessionSettingRegistry(LoadedRules loadedRules) {
+    public SessionSettingRegistry(SessionSettingProvider serverSessionSettingProvider) {
         var builder = ImmutableMap.<String, SessionSetting<?>>builder()
             .put(SEARCH_PATH_KEY,
                  new SessionSetting<>(
@@ -114,10 +114,7 @@ public class SessionSettingRegistry {
                      DataTypes.STRING.getName()
                  )
             );
-        for (var sessionSetting : loadedRules.sessionSettings()) {
-            builder.put(sessionSetting.name(), sessionSetting);
-        }
-
+        serverSessionSettingProvider.sessionSettings().forEach(s -> builder.put(s.name(), s));
         this.settings = builder.build();
     }
 

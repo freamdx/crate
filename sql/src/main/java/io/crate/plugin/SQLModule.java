@@ -26,6 +26,7 @@ import io.crate.expression.udf.UserDefinedFunctionService;
 import io.crate.memory.MemoryManagerFactory;
 import io.crate.metadata.DanglingArtifactsService;
 import io.crate.metadata.FulltextAnalyzerResolver;
+import io.crate.metadata.settings.session.SessionSettingProvider;
 import io.crate.planner.Planner;
 import io.crate.planner.optimizer.LoadedRules;
 import io.crate.protocols.postgres.PostgresNetty;
@@ -33,7 +34,6 @@ import io.crate.rest.action.RestSQLAction;
 import io.crate.statistics.TableStats;
 import io.crate.statistics.TableStatsService;
 import org.elasticsearch.common.inject.AbstractModule;
-
 
 public class SQLModule extends AbstractModule {
 
@@ -50,5 +50,6 @@ public class SQLModule extends AbstractModule {
         bind(RestSQLAction.class).asEagerSingleton();
         bind(DanglingArtifactsService.class).asEagerSingleton();
         bind(LoadedRules.class).asEagerSingleton();
+        bind(SessionSettingProvider.class).to(LoadedRules.class);
     }
 }
