@@ -25,7 +25,6 @@ package io.crate.metadata.settings.session;
 import com.google.common.collect.ImmutableMap;
 import io.crate.action.sql.SessionContext;
 import io.crate.metadata.SearchPath;
-import io.crate.planner.optimizer.LoadedRules;
 import io.crate.protocols.postgres.PostgresWireProtocol;
 import io.crate.types.DataTypes;
 import org.elasticsearch.common.inject.Inject;

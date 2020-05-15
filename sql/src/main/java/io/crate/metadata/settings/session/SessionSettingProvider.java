@@ -28,7 +28,7 @@ import java.util.List;
  * Base interface for any class providing {@link io.crate.metadata.settings.session.SessionSetting}
  * to get registered at {@link io.crate.metadata.settings.session.SessionSettingRegistry}.
  */
-public interface SessionSettingProvider  {
+public interface SessionSettingProvider {
 
     List<SessionSetting<?>> sessionSettings();
 

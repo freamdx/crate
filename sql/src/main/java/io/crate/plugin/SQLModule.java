@@ -35,6 +35,7 @@ import io.crate.statistics.TableStats;
 import io.crate.statistics.TableStatsService;
 import org.elasticsearch.common.inject.AbstractModule;
 
+
 public class SQLModule extends AbstractModule {
 
     @Override
