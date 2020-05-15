@@ -41,7 +41,6 @@ public class MetaDataModule extends AbstractModule {
         MapBinder.newMapBinder(binder(), String.class, FunctionResolver.class);
         MapBinder.newMapBinder(binder(), String.class, TableFunctionImplementation.class);
         bind(Functions.class).asEagerSingleton();
-        bind(SessionSettingRegistry.class).asEagerSingleton();
     }
 
     private void bindSchemas() {

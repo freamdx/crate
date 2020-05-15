@@ -119,7 +119,7 @@ public class SessionSettingRegistry {
                 builder.put(setting.name(), setting);
             }
         }
-        this.settings = builder.build();    
+        this.settings = builder.build();
     }
 
     public Map<String, SessionSetting<?>> settings() {
