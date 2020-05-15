@@ -30,8 +30,8 @@ public class SessionSettingModule extends AbstractModule {
 
     @Override
     protected void configure() {
-        Multibinder<SessionSettingProvider> uriBinder = Multibinder.newSetBinder(binder(), SessionSettingProvider.class);
-        uriBinder.addBinding().to(LoadedRules.class);
         bind(SessionSettingRegistry.class).asEagerSingleton();
+        var sessionSettingProviderBinder = Multibinder.newSetBinder(binder(), SessionSettingProvider.class);
+        sessionSettingProviderBinder.addBinding().to(LoadedRules.class);
     }
 }
