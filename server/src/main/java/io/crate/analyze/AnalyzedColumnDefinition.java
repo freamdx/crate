@@ -461,8 +461,11 @@ public class AnalyzedColumnDefinition<T> {
                 if (definition.analyzer != null) {
                     mapping.put("analyzer", DataTypes.STRING.value(definition.analyzer));
                 }
+                StringType stringType = (StringType) definition.dataType;
+                if (stringType.hasLengthLimit()) {
+                    mapping.put("length_limit", stringType.lengthLimit());
+                }
                 break;
-
             default:
                 // noop
                 break;

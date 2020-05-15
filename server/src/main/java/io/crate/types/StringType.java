@@ -34,6 +34,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 public class StringType extends DataType<String> implements Streamer<String> {
 
@@ -42,7 +43,18 @@ public class StringType extends DataType<String> implements Streamer<String> {
     public static final String T = "t";
     public static final String F = "f";
 
+    private final int lengthLimit;
+
+    public static StringType of(int lengthLimit) {
+        return new StringType(lengthLimit);
+    }
+
+    private StringType(int lengthLimit) {
+        this.lengthLimit = lengthLimit;
+    }
+
     protected StringType() {
+        this(Integer.MAX_VALUE);
     }
 
     @Override
@@ -58,6 +70,14 @@ public class StringType extends DataType<String> implements Streamer<String> {
     @Override
     public String getName() {
         return "text";
+    }
+
+    public int lengthLimit() {
+        return lengthLimit;
+    }
+
+    public boolean hasLengthLimit() {
+        return lengthLimit != Integer.MAX_VALUE;
     }
 
     @Override
@@ -117,5 +137,25 @@ public class StringType extends DataType<String> implements Streamer<String> {
     @Override
     public void writeValueTo(StreamOutput out, String v) throws IOException {
         out.writeOptionalString(v);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        if (!super.equals(o)) {
+            return false;
+        }
+        StringType that = (StringType) o;
+        return lengthLimit == that.lengthLimit;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), lengthLimit);
     }
 }
