@@ -22,20 +22,21 @@
 
 package io.crate.testing;
 
-import io.crate.expression.reference.doc.lucene.LuceneReferenceResolver;
-import io.crate.metadata.RelationName;
-import io.crate.metadata.doc.DocTableInfo;
+
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.Collections;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.store.ByteBuffersDirectory;
 import org.elasticsearch.Version;
-import org.elasticsearch.cluster.ClusterModule;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.metadata.IndexMetaData;
 import org.elasticsearch.common.UUIDs;
-import org.elasticsearch.common.io.stream.NamedWriteableRegistry;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.util.BigArrays;
 import org.elasticsearch.common.xcontent.NamedXContentRegistry;
@@ -49,11 +50,8 @@ import org.elasticsearch.index.IndexSettings;
 import org.elasticsearch.index.analysis.AnalysisRegistry;
 import org.elasticsearch.index.analysis.IndexAnalyzers;
 import org.elasticsearch.index.cache.IndexCache;
-import org.elasticsearch.index.cache.bitset.BitsetFilterCache;
 import org.elasticsearch.index.cache.query.DisabledQueryCache;
 import org.elasticsearch.index.engine.InternalEngineFactory;
-import org.elasticsearch.index.fielddata.IndexFieldDataCache;
-import org.elasticsearch.index.fielddata.IndexFieldDataService;
 import org.elasticsearch.index.mapper.ArrayMapper;
 import org.elasticsearch.index.mapper.ArrayTypeParser;
 import org.elasticsearch.index.mapper.Mapper;
@@ -64,19 +62,13 @@ import org.elasticsearch.indices.IndicesModule;
 import org.elasticsearch.indices.IndicesQueryCache;
 import org.elasticsearch.indices.analysis.AnalysisModule;
 import org.elasticsearch.indices.breaker.NoneCircuitBreakerService;
-import org.elasticsearch.indices.fielddata.cache.IndicesFieldDataCache;
 import org.elasticsearch.indices.mapper.MapperRegistry;
 import org.elasticsearch.plugins.MapperPlugin;
 import org.elasticsearch.test.IndexSettingsModule;
 import org.elasticsearch.threadpool.ThreadPool;
 
-import java.io.IOException;
-import java.nio.file.Path;
-import java.util.Collections;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
-
-import static org.mockito.Mockito.mock;
+import io.crate.expression.reference.doc.lucene.LuceneReferenceResolver;
+import io.crate.metadata.doc.DocTableInfo;
 
 public final class IndexEnv implements AutoCloseable {
 
@@ -86,7 +78,6 @@ public final class IndexEnv implements AutoCloseable {
     private final NodeEnvironment nodeEnvironment;
     private final IndexCache indexCache;
     private final IndexService indexService;
-    private final IndexFieldDataService indexFieldDataService;
     private final IndexWriter writer;
 
     public IndexEnv(ThreadPool threadPool,
@@ -127,18 +118,9 @@ public final class IndexEnv implements AutoCloseable {
             MapperService.MergeReason.MAPPING_UPDATE,
             true
         );
-        BitsetFilterCache bitsetFilterCache = new BitsetFilterCache(
-            idxSettings,
-            mock(BitsetFilterCache.Listener.class)
-        );
         DisabledQueryCache queryCache = new DisabledQueryCache(idxSettings);
-        indexCache = new IndexCache(
-            idxSettings,
-            queryCache,
-            bitsetFilterCache
-        );
+        indexCache = new IndexCache(idxSettings, queryCache);
         IndexModule indexModule = new IndexModule(idxSettings, analysisRegistry, new InternalEngineFactory(), Collections.emptyMap());
-        NamedWriteableRegistry namedWriteableRegistry = new NamedWriteableRegistry(ClusterModule.getNamedWriteables());
         nodeEnvironment = new NodeEnvironment(Settings.EMPTY, env);
         luceneReferenceResolver = new LuceneReferenceResolver(
             indexName,
@@ -163,14 +145,11 @@ public final class IndexEnv implements AutoCloseable {
             BigArrays.NON_RECYCLING_INSTANCE,
             threadPool,
             new IndicesQueryCache(Settings.EMPTY),
-            mapperRegistry,
-            new IndicesFieldDataCache(Settings.EMPTY, mock(IndexFieldDataCache.Listener.class)),
-            namedWriteableRegistry
+            mapperRegistry
         );
-        indexFieldDataService = indexService.fieldData();
         IndexWriterConfig conf = new IndexWriterConfig(new StandardAnalyzer());
         writer = new IndexWriter(new ByteBuffersDirectory(), conf);
-        queryShardContext.set(new QueryShardContext(idxSettings, indexFieldDataService::getForField, mapperService));
+        queryShardContext.set(new QueryShardContext(idxSettings, mapperService));
     }
 
     @Override

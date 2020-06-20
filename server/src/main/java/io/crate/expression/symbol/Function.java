@@ -22,7 +22,7 @@
 
 package io.crate.expression.symbol;
 
-import com.google.common.base.Preconditions;
+import io.crate.exceptions.ConversionException;
 import io.crate.execution.engine.aggregation.impl.CountAggregation;
 import io.crate.expression.operator.Operator;
 import io.crate.expression.operator.any.AnyOperator;
@@ -35,7 +35,10 @@ import io.crate.expression.scalar.SubscriptObjectFunction;
 import io.crate.expression.scalar.SubscriptRecordFunction;
 import io.crate.expression.scalar.arithmetic.ArithmeticFunctions;
 import io.crate.expression.scalar.arithmetic.ArrayFunction;
-import io.crate.expression.scalar.cast.CastFunctionResolver;
+import io.crate.expression.scalar.cast.CastMode;
+import io.crate.expression.scalar.cast.ExplicitCastFunction;
+import io.crate.expression.scalar.cast.ImplicitCastFunction;
+import io.crate.expression.scalar.cast.TryCastFunction;
 import io.crate.expression.scalar.systeminformation.CurrentSchemaFunction;
 import io.crate.expression.scalar.systeminformation.CurrentSchemasFunction;
 import io.crate.expression.scalar.timestamp.CurrentTimestampFunction;
@@ -48,7 +51,6 @@ import io.crate.metadata.Reference;
 import io.crate.metadata.functions.Signature;
 import io.crate.types.ArrayType;
 import io.crate.types.DataType;
-import io.crate.types.DataTypes;
 import org.elasticsearch.Version;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
@@ -61,9 +63,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
-import static io.crate.expression.scalar.cast.CastFunction.CAST_SQL_NAME;
-import static io.crate.expression.scalar.cast.CastFunction.TRY_CAST_SQL_NAME;
-import static io.crate.expression.scalar.cast.CastFunctionResolver.TRY_CAST_PREFIX;
+import static java.util.Objects.requireNonNull;
 
 public class Function extends Symbol implements Cloneable {
 
@@ -83,16 +83,6 @@ public class Function extends Symbol implements Cloneable {
     @Nullable
     private final Symbol filter;
 
-    public static Function of(String name, List<Symbol> arguments, DataType<?> returnType) {
-        return new Function(
-            new FunctionInfo(
-                new FunctionIdent(name, Symbols.typeView(arguments)),
-                returnType
-            ),
-            arguments
-        );
-    }
-
     public Function(StreamInput in) throws IOException {
         info = new FunctionInfo(in);
         if (in.getVersion().onOrAfter(Version.V_4_1_0)) {
@@ -108,18 +98,16 @@ public class Function extends Symbol implements Cloneable {
         }
     }
 
-    public Function(FunctionInfo info, List<Symbol> arguments) {
-        this(info, null, arguments);
-    }
-
     public Function(FunctionInfo info, Signature signature, List<Symbol> arguments) {
         this(info, signature, arguments, null);
     }
 
     public Function(FunctionInfo info, Signature signature, List<Symbol> arguments, Symbol filter) {
-        Preconditions.checkNotNull(info, "function info is null");
-        Preconditions.checkArgument(arguments.size() == info.ident().argumentTypes().size(),
-            "number of arguments must match the number of argumentTypes of the FunctionIdent");
+        requireNonNull(info, "function info is null");
+        if (arguments.size() != info.ident().argumentTypes().size()) {
+            throw new IllegalArgumentException(
+                "number of arguments must match the number of argumentTypes of the FunctionIdent");
+        }
         this.info = info;
         this.signature = signature;
         this.arguments = List.copyOf(arguments);
@@ -150,22 +138,7 @@ public class Function extends Symbol implements Cloneable {
     }
 
     @Override
-    public boolean canBeCasted() {
-        return info.type() == FunctionInfo.Type.SCALAR || info.type() == FunctionInfo.Type.AGGREGATE;
-    }
-
-    @Override
-    public boolean isValueSymbol() {
-        for (Symbol argument : arguments) {
-            if (!argument.isValueSymbol()) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    @Override
-    public Symbol cast(DataType<?> targetType, boolean tryCast) {
+    public Symbol cast(DataType<?> targetType, CastMode... modes) {
         if (targetType instanceof ArrayType && info.ident().name().equals(ArrayFunction.NAME)) {
             /* We treat _array(...) in a special way since it's a value constructor and no regular function
              * This allows us to do proper type inference for inserts/updates where there are assignments like
@@ -174,17 +147,21 @@ public class Function extends Symbol implements Cloneable {
              * or
              *      some_array = array_cat([?, ?], [1, 2])
              */
-            return castArrayElements(targetType, tryCast);
+            return castArrayElements(targetType, modes);
         } else {
-            return super.cast(targetType, tryCast);
+            return super.cast(targetType, modes);
         }
     }
 
-    private Symbol castArrayElements(DataType<?> newDataType, boolean tryCast) {
+    private Symbol castArrayElements(DataType<?> newDataType, CastMode... modes) {
         DataType<?> innerType = ((ArrayType<?>) newDataType).innerType();
         ArrayList<Symbol> newArgs = new ArrayList<>(arguments.size());
         for (Symbol arg : arguments) {
-            newArgs.add(arg.cast(innerType, tryCast));
+            try {
+                newArgs.add(arg.cast(innerType, modes));
+            } catch (ConversionException e) {
+                throw new ConversionException(info.returnType(), newDataType);
+            }
         }
         return new Function(
             new FunctionInfo(new FunctionIdent(info.ident().name(), Symbols.typeView(newArgs)), newDataType),
@@ -304,7 +281,9 @@ public class Function extends Symbol implements Cloneable {
             default:
                 if (name.startsWith(AnyOperator.OPERATOR_PREFIX)) {
                     printAnyOperator(builder, style);
-                } else if (CastFunctionResolver.isCastFunction(name)) {
+                } else if (name.equalsIgnoreCase(ImplicitCastFunction.NAME) ||
+                           name.equalsIgnoreCase(ExplicitCastFunction.NAME) ||
+                           name.equalsIgnoreCase(TryCastFunction.NAME)) {
                     printCastFunction(builder, style);
                 } else if (name.startsWith(Operator.PREFIX)) {
                     printOperator(builder, style, null);
@@ -346,27 +325,21 @@ public class Function extends Symbol implements Cloneable {
     }
 
     private void printCastFunction(StringBuilder builder, Style style) {
-        String prefix = info.ident().name().startsWith(TRY_CAST_PREFIX)
-            ? TRY_CAST_SQL_NAME
-            : CAST_SQL_NAME;
-        final String asTypeName;
-        DataType<?> dataType = info.returnType();
-        if (DataTypes.isArray(dataType)) {
-            ArrayType<?> arrayType = ((ArrayType<?>) dataType);
-            asTypeName = " AS "
-                         + ArrayType.NAME
-                         + "("
-                         + arrayType.innerType().getName()
-                         + ")";
-        } else {
-            asTypeName = " AS " + dataType.getName();
-        }
-        builder.append(prefix)
-            .append("(");
-        builder.append(arguments().get(0).toString(style));
+        var name = info.ident().name();
+        var targetType = info.returnType();
         builder
-            .append(asTypeName)
-            .append(")");
+            .append(name)
+            .append("(")
+            .append(arguments().get(0).toString(style));
+        if (name.equalsIgnoreCase(ImplicitCastFunction.NAME)) {
+            builder
+                .append(", ")
+                .append(arguments.get(1).toString(style));
+        } else {
+            builder.append(" AS ")
+                .append(targetType.getTypeSignature().toString());
+        }
+        builder.append(")");
     }
 
     private void printExtract(StringBuilder builder, Style style) {

@@ -23,7 +23,10 @@ import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.s3.model.AbortMultipartUploadRequest;
 import com.amazonaws.services.s3.model.AmazonS3Exception;
 import com.amazonaws.services.s3.model.CompleteMultipartUploadRequest;
+import com.amazonaws.services.s3.model.DeleteObjectsRequest;
 import com.amazonaws.services.s3.model.InitiateMultipartUploadRequest;
+import com.amazonaws.services.s3.model.ListObjectsRequest;
+import com.amazonaws.services.s3.model.MultiObjectDeleteException;
 import com.amazonaws.services.s3.model.ObjectListing;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.PartETag;
@@ -33,7 +36,9 @@ import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.amazonaws.services.s3.model.UploadPartRequest;
 import com.amazonaws.services.s3.model.UploadPartResult;
 import org.apache.lucene.util.SetOnce;
+import org.elasticsearch.ExceptionsHelper;
 import org.elasticsearch.common.Strings;
+import org.elasticsearch.common.blobstore.BlobContainer;
 import org.elasticsearch.common.blobstore.BlobMetaData;
 import org.elasticsearch.common.blobstore.BlobPath;
 import org.elasticsearch.common.blobstore.BlobStoreException;
@@ -47,14 +52,23 @@ import java.io.InputStream;
 import java.nio.file.NoSuchFileException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.elasticsearch.repositories.s3.S3RepositorySettings.MAX_FILE_SIZE;
 import static org.elasticsearch.repositories.s3.S3RepositorySettings.MAX_FILE_SIZE_USING_MULTIPART;
 import static org.elasticsearch.repositories.s3.S3RepositorySettings.MIN_PART_SIZE_USING_MULTIPART;
 
 class S3BlobContainer extends AbstractBlobContainer {
+
+    /**
+     * Maximum number of deletes in a {@link DeleteObjectsRequest}.
+     * @see <a href="https://docs.aws.amazon.com/AmazonS3/latest/API/multiobjectdeleteapi.html">S3 Documentation</a>.
+     */
+    private static final int MAX_BULK_DELETES = 1000;
 
     private final S3BlobStore blobStore;
     private final String keyPath;
@@ -110,6 +124,61 @@ class S3BlobContainer extends AbstractBlobContainer {
     }
 
     @Override
+    public void deleteBlobsIgnoringIfNotExists(List<String> blobNames) throws IOException {
+        if (blobNames.isEmpty()) {
+            return;
+        }
+        final Set<String> outstanding = blobNames.stream().map(this::buildKey).collect(Collectors.toSet());
+        try (AmazonS3Reference clientReference = blobStore.clientReference()) {
+            // S3 API only allows 1k blobs per delete so we split up the given blobs into requests of max. 1k deletes
+            final List<DeleteObjectsRequest> deleteRequests = new ArrayList<>();
+            final List<String> partition = new ArrayList<>();
+            for (String key : outstanding) {
+                partition.add(key);
+                if (partition.size() == MAX_BULK_DELETES) {
+                    deleteRequests.add(bulkDelete(blobStore.bucket(), partition));
+                    partition.clear();
+                }
+            }
+            if (partition.isEmpty() == false) {
+                deleteRequests.add(bulkDelete(blobStore.bucket(), partition));
+            }
+
+            AmazonClientException aex = null;
+            for (DeleteObjectsRequest deleteRequest : deleteRequests) {
+                List<String> keysInRequest =
+                    deleteRequest.getKeys().stream().map(DeleteObjectsRequest.KeyVersion::getKey).collect(Collectors.toList());
+                try {
+                    clientReference.client().deleteObjects(deleteRequest);
+                    outstanding.removeAll(keysInRequest);
+                } catch (MultiObjectDeleteException e) {
+                    // We are sending quiet mode requests so we can't use the deleted keys entry on the exception and instead
+                    // first remove all keys that were sent in the request and then add back those that ran into an exception.
+                    outstanding.removeAll(keysInRequest);
+                    outstanding.addAll(
+                        e.getErrors().stream().map(MultiObjectDeleteException.DeleteError::getKey).collect(Collectors.toSet()));
+                    aex = ExceptionsHelper.useOrSuppress(aex, e);
+                } catch (AmazonClientException e) {
+                    // The AWS client threw any unexpected exception and did not execute the request at all so we do not
+                    // remove any keys from the outstanding deletes set.
+                    aex = ExceptionsHelper.useOrSuppress(aex, e);
+                }
+            }
+            if (aex != null) {
+                throw aex;
+            }
+
+        } catch (Exception e) {
+            throw new IOException("Failed to delete blobs [" + outstanding + "]", e);
+        }
+        assert outstanding.isEmpty();
+    }
+
+    private static DeleteObjectsRequest bulkDelete(String bucket, List<String> blobs) {
+        return new DeleteObjectsRequest(bucket).withKeys(blobs.toArray(Strings.EMPTY_ARRAY)).withQuiet(true);
+    }
+
+    @Override
     public void deleteBlobIgnoringIfNotExists(String blobName) throws IOException {
         try (AmazonS3Reference clientReference = blobStore.clientReference()) {
             // There is no way to know if an non-versioned object existed before the deletion
@@ -118,6 +187,7 @@ class S3BlobContainer extends AbstractBlobContainer {
             throw new IOException("Exception when deleting blob [" + blobName + "]", e);
         }
     }
+
 
     @Override
     public Map<String, BlobMetaData> listBlobsByPrefix(@Nullable String blobNamePrefix) throws IOException {
@@ -190,6 +260,52 @@ class S3BlobContainer extends AbstractBlobContainer {
             clientReference.client().putObject(putRequest);
         } catch (final AmazonClientException e) {
             throw new IOException("Unable to upload object [" + blobName + "] using a single upload", e);
+        }
+    }
+
+    @Override
+    public Map<String, BlobContainer> children() throws IOException {
+        try (AmazonS3Reference clientReference = blobStore.clientReference()) {
+            ObjectListing prevListing = null;
+            final var result = new LinkedHashMap<String, BlobContainer>();
+            while (true) {
+                ObjectListing list;
+                if (prevListing != null) {
+                    final ObjectListing finalPrevListing = prevListing;
+                    list = clientReference.client().listNextBatchOfObjects(finalPrevListing);
+                } else {
+                    final ListObjectsRequest listObjectsRequest = new ListObjectsRequest();
+                    listObjectsRequest.setBucketName(blobStore.bucket());
+                    listObjectsRequest.setPrefix(keyPath);
+                    listObjectsRequest.setDelimiter("/");
+                    list = clientReference.client().listObjects(listObjectsRequest);
+                }
+                for (final String summary : list.getCommonPrefixes()) {
+                    final String name = summary.substring(keyPath.length());
+                    if (name.isEmpty() == false) {
+                        // Stripping the trailing slash off of the common prefix
+                        final String last = name.substring(0, name.length() - 1);
+                        final BlobPath path = path().add(last);
+                        result.put(last, blobStore.blobContainer(path));
+                    }
+                }
+                assert list.getObjectSummaries().stream().noneMatch(s -> {
+                    for (String commonPrefix : list.getCommonPrefixes()) {
+                        if (s.getKey().substring(keyPath.length()).startsWith(commonPrefix)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }) : "Response contained children for listed common prefixes.";
+                if (list.isTruncated()) {
+                    prevListing = list;
+                } else {
+                    break;
+                }
+            }
+            return result;
+        } catch (final AmazonClientException e) {
+            throw new IOException("Exception when listing children of [" + path().buildAsString() + ']', e);
         }
     }
 

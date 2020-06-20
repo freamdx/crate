@@ -40,6 +40,7 @@ import io.crate.execution.dsl.projection.GroupProjection;
 import io.crate.execution.dsl.projection.MergeCountProjection;
 import io.crate.execution.dsl.projection.OrderedTopNProjection;
 import io.crate.execution.dsl.projection.Projection;
+import io.crate.execution.dsl.projection.TopNDistinctProjection;
 import io.crate.execution.dsl.projection.TopNProjection;
 import io.crate.execution.dsl.projection.WindowAggProjection;
 import io.crate.execution.engine.NodeOperationTreeGenerator;
@@ -164,14 +165,14 @@ public class SelectPlannerTest extends CrateDummyClusterServiceUnitTest {
     public void testGetPlan() throws Exception {
         LogicalPlan plan = e.logicalPlan("select name from users where id = 1");
         assertThat(plan, isPlan(
-            "Get[doc.users | name | DocKeys{1}]"));
+            "Get[doc.users | name | DocKeys{1::bigint}]"));
     }
 
     @Test
     public void testGetWithVersion() throws Exception {
         LogicalPlan plan = e.logicalPlan("select name from users where id = 1 and _version = 1");
         assertThat(plan, isPlan(
-            "Get[doc.users | name | DocKeys{1, 1}]"));
+            "Get[doc.users | name | DocKeys{1::bigint, 1::bigint}]"));
     }
 
     @Test
@@ -186,7 +187,7 @@ public class SelectPlannerTest extends CrateDummyClusterServiceUnitTest {
     public void testGetPlanPartitioned() throws Exception {
         LogicalPlan plan = e.logicalPlan("select name, date from parted_pks where id = 1 and date = 0");
         assertThat(plan, isPlan(
-            "Get[doc.parted_pks | name, date | DocKeys{1, 0}]"
+            "Get[doc.parted_pks | name, date | DocKeys{1, 0::bigint}]"
         ));
     }
 
@@ -194,7 +195,7 @@ public class SelectPlannerTest extends CrateDummyClusterServiceUnitTest {
     public void testMultiGetPlan() throws Exception {
         LogicalPlan plan = e.logicalPlan("select name from users where id in (1, 2)");
         assertThat(plan, isPlan(
-            "Get[doc.users | name | DocKeys{1; 2}]"
+            "Get[doc.users | name | DocKeys{1::bigint; 2::bigint}]"
         ));
     }
 
@@ -561,7 +562,7 @@ public class SelectPlannerTest extends CrateDummyClusterServiceUnitTest {
         assertThat(nl.joinPhase().joinType(), is(JoinType.INNER));
         Collect rightCM = (Collect) nl.right();
         assertThat(((RoutedCollectPhase) rightCM.collectPhase()).where(),
-            isSQL("((doc.users.name = 'Arthur') AND (doc.users.id > 1))"));
+            isSQL("((doc.users.name = 'Arthur') AND (doc.users.id > 1::bigint))"));
     }
 
     @Test
@@ -700,7 +701,7 @@ public class SelectPlannerTest extends CrateDummyClusterServiceUnitTest {
     public void testFilterOnPKSubsetResultsInPKLookupPlanIfTheOtherPKPartIsGenerated() {
         LogicalPlan plan = e.logicalPlan("select 1 from t_pk_part_generated where ts = 0");
         assertThat(plan, isPlan(
-            "Get[doc.t_pk_part_generated | 1 | DocKeys{0, 0}]"
+            "Get[doc.t_pk_part_generated | 1 | DocKeys{0::bigint, 0::bigint}]"
         ));
     }
 
@@ -719,7 +720,7 @@ public class SelectPlannerTest extends CrateDummyClusterServiceUnitTest {
             "ProjectSet[unnest([1, 2])]\n" +
             "  └ TableFunction[empty_row | [] | true]"));
         Symbol output = plan.outputs().get(0);
-        assertThat(output.valueType(), is(DataTypes.LONG));
+        assertThat(output.valueType(), is(DataTypes.INTEGER));
     }
 
     @Test
@@ -750,8 +751,8 @@ public class SelectPlannerTest extends CrateDummyClusterServiceUnitTest {
     public void testAggregationCanBeUsedAsArgumentToTableFunction() {
         LogicalPlan plan = e.logicalPlan("select count(name), generate_series(1, count(name)) from users");
         assertThat(plan, isPlan(
-            "Eval[count(name), generate_series(1, count(name))]\n" +
-            "  └ ProjectSet[generate_series(1, count(name)), count(name)]\n" +
+            "Eval[count(name), generate_series(1::bigint, count(name))]\n" +
+            "  └ ProjectSet[generate_series(1::bigint, count(name)), count(name)]\n" +
             "    └ HashAggregate[count(name)]\n" +
             "      └ Collect[doc.users | [name] | true]"));
     }
@@ -816,7 +817,7 @@ public class SelectPlannerTest extends CrateDummyClusterServiceUnitTest {
         String stmt = "select distinct name from users limit 1";
         LogicalPlan plan = e.logicalPlan(stmt);
         assertThat(plan, isPlan(
-            "TopNDistinct[1 | [name]]\n" +
+            "TopNDistinct[1::bigint;0 | [name]]\n" +
             "  └ Collect[doc.users | [name] | true]"));
     }
 
@@ -825,8 +826,34 @@ public class SelectPlannerTest extends CrateDummyClusterServiceUnitTest {
         String stmt = "select id, name from users group by id, name limit 1";
         LogicalPlan plan = e.logicalPlan(stmt);
         assertThat(plan, isPlan(
-            "TopNDistinct[1 | [id, name]]\n" +
+            "TopNDistinct[1::bigint;0 | [id, name]]\n" +
             "  └ Collect[doc.users | [id, name] | true]"));
+    }
+
+    @Test
+    public void test_distinct_with_limit_and_offset_keeps_offset() throws Exception {
+        String stmt = "select id, name from users group by id, name limit 1 offset 3";
+        LogicalPlan plan = e.logicalPlan(stmt);
+        assertThat(plan, isPlan(
+            "TopNDistinct[1::bigint;3::bigint | [id, name]]\n" +
+            "  └ Collect[doc.users | [id, name] | true]"));
+
+        Merge merge = e.plan(stmt);
+        List<Projection> collectProjections = ((Collect) merge.subPlan()).collectPhase().projections();;
+        assertThat(
+            collectProjections,
+            contains(
+                instanceOf(TopNDistinctProjection.class)
+            )
+        );
+        List<Projection> mergeProjections = merge.mergePhase().projections();
+        assertThat(
+            mergeProjections,
+            contains(
+                instanceOf(TopNDistinctProjection.class),
+                instanceOf(TopNProjection.class)
+            )
+        );
     }
 
     @Test
@@ -920,7 +947,7 @@ public class SelectPlannerTest extends CrateDummyClusterServiceUnitTest {
         LogicalPlan logicalPlan = e.logicalPlan(stmt);
         String expectedPlan =
             "GroupHashAggregate[name | count(*)]\n" +
-            "  └ Get[doc.users | name | DocKeys{1; 2; 3; 4; 5}]";
+            "  └ Get[doc.users | name | DocKeys{1::bigint; 2::bigint; 3::bigint; 4::bigint; 5::bigint}]";
         assertThat(logicalPlan, isPlan(expectedPlan));
         Merge coordinatorMerge = e.plan(stmt);
         Merge distributedMerge = (Merge) coordinatorMerge.subPlan();

@@ -43,7 +43,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
@@ -65,7 +64,6 @@ public class ThreadPool implements Scheduler, Closeable {
         public static final String GENERIC = "generic";
         public static final String LISTENER = "listener";
         public static final String GET = "get";
-        public static final String ANALYZE = "analyze";
         public static final String WRITE = "write";
         public static final String SEARCH = "search";
         public static final String MANAGEMENT = "management";
@@ -112,60 +110,50 @@ public class ThreadPool implements Scheduler, Closeable {
         }
     }
 
-    public static final Map<String, ThreadPoolType> THREAD_POOL_TYPES;
-
-    static {
-        HashMap<String, ThreadPoolType> map = new HashMap<>();
-        map.put(Names.SAME, ThreadPoolType.DIRECT);
-        map.put(Names.GENERIC, ThreadPoolType.SCALING);
-        map.put(Names.LISTENER, ThreadPoolType.FIXED);
-        map.put(Names.GET, ThreadPoolType.FIXED);
-        map.put(Names.ANALYZE, ThreadPoolType.FIXED);
-        map.put(Names.WRITE, ThreadPoolType.FIXED);
-        map.put(Names.SEARCH, ThreadPoolType.FIXED);
-        map.put(Names.MANAGEMENT, ThreadPoolType.SCALING);
-        map.put(Names.FLUSH, ThreadPoolType.SCALING);
-        map.put(Names.REFRESH, ThreadPoolType.SCALING);
-        map.put(Names.WARMER, ThreadPoolType.SCALING);
-        map.put(Names.SNAPSHOT, ThreadPoolType.SCALING);
-        map.put(Names.FORCE_MERGE, ThreadPoolType.FIXED);
-        map.put(Names.FETCH_SHARD_STARTED, ThreadPoolType.SCALING);
-        map.put(Names.FETCH_SHARD_STORE, ThreadPoolType.SCALING);
-        THREAD_POOL_TYPES = Collections.unmodifiableMap(map);
-    }
+    public static final Map<String, ThreadPoolType> THREAD_POOL_TYPES = Map.ofEntries(
+        Map.entry(Names.SAME, ThreadPoolType.DIRECT),
+        Map.entry(Names.GENERIC, ThreadPoolType.SCALING),
+        Map.entry(Names.LISTENER, ThreadPoolType.FIXED),
+        Map.entry(Names.GET, ThreadPoolType.FIXED),
+        Map.entry(Names.WRITE, ThreadPoolType.FIXED),
+        Map.entry(Names.SEARCH, ThreadPoolType.FIXED),
+        Map.entry(Names.MANAGEMENT, ThreadPoolType.SCALING),
+        Map.entry(Names.FLUSH, ThreadPoolType.SCALING),
+        Map.entry(Names.REFRESH, ThreadPoolType.SCALING),
+        Map.entry(Names.WARMER, ThreadPoolType.SCALING),
+        Map.entry(Names.SNAPSHOT, ThreadPoolType.SCALING),
+        Map.entry(Names.FORCE_MERGE, ThreadPoolType.FIXED),
+        Map.entry(Names.FETCH_SHARD_STARTED, ThreadPoolType.SCALING),
+        Map.entry(Names.FETCH_SHARD_STORE, ThreadPoolType.SCALING)
+    );
 
     private final Map<String, ExecutorHolder> executors;
 
     private final CachedTimeThread cachedTimeThread;
-
-    static final Executor DIRECT_EXECUTOR = EsExecutors.directExecutor();
-
-    private final ThreadContext threadContext;
 
     private final Map<String, ExecutorBuilder> builders;
 
     private final ScheduledThreadPoolExecutor scheduler;
 
     public Collection<ExecutorBuilder> builders() {
-        return Collections.unmodifiableCollection(builders.values());
+        return builders.values();
     }
 
     public static Setting<TimeValue> ESTIMATED_TIME_INTERVAL_SETTING =
         Setting.timeSetting("thread_pool.estimated_time_interval",
             TimeValue.timeValueMillis(200), TimeValue.ZERO, Setting.Property.NodeScope);
 
-    public ThreadPool(final Settings settings, final ExecutorBuilder<?>... customBuilders) {
+    public ThreadPool(final Settings settings) {
         assert Node.NODE_NAME_SETTING.exists(settings);
 
-        final Map<String, ExecutorBuilder> builders = new HashMap<>();
+        final HashMap<String, ExecutorBuilder> builders = new HashMap<>();
         final int availableProcessors = EsExecutors.numberOfProcessors(settings);
         final int halfProcMaxAt5 = halfNumberOfProcessorsMaxFive(availableProcessors);
         final int halfProcMaxAt10 = halfNumberOfProcessorsMaxTen(availableProcessors);
         final int genericThreadPoolMax = boundedBy(4 * availableProcessors, 128, 512);
         builders.put(Names.GENERIC, new ScalingExecutorBuilder(Names.GENERIC, 4, genericThreadPoolMax, TimeValue.timeValueSeconds(30)));
         builders.put(Names.WRITE, new FixedExecutorBuilder(settings, Names.WRITE, availableProcessors, 200));
-        builders.put(Names.GET, new FixedExecutorBuilder(settings, Names.GET, availableProcessors, 1000));
-        builders.put(Names.ANALYZE, new FixedExecutorBuilder(settings, Names.ANALYZE, 1, 16));
+        builders.put(Names.GET, new FixedExecutorBuilder(settings, Names.GET, halfProcMaxAt10, 100));
         builders.put(Names.SEARCH, new FixedExecutorBuilder(settings, Names.SEARCH, searchThreadPoolSize(availableProcessors), 1000));
         builders.put(Names.MANAGEMENT, new ScalingExecutorBuilder(Names.MANAGEMENT, 1, 5, TimeValue.timeValueMinutes(5)));
         // no queue as this means clients will need to handle rejections on listener queue even if the operation succeeded
@@ -180,20 +168,12 @@ public class ThreadPool implements Scheduler, Closeable {
         builders.put(Names.FORCE_MERGE, new FixedExecutorBuilder(settings, Names.FORCE_MERGE, 1, -1));
         builders.put(Names.FETCH_SHARD_STORE,
                 new ScalingExecutorBuilder(Names.FETCH_SHARD_STORE, 1, 2 * availableProcessors, TimeValue.timeValueMinutes(5)));
-        for (final ExecutorBuilder<?> builder : customBuilders) {
-            if (builders.containsKey(builder.name())) {
-                throw new IllegalArgumentException("builder with name [" + builder.name() + "] already exists");
-            }
-            builders.put(builder.name(), builder);
-        }
         this.builders = Collections.unmodifiableMap(builders);
-
-        threadContext = new ThreadContext(settings);
 
         final Map<String, ExecutorHolder> executors = new HashMap<>();
         for (final Map.Entry<String, ExecutorBuilder> entry : builders.entrySet()) {
             final ExecutorBuilder.ExecutorSettings executorSettings = entry.getValue().getSettings(settings);
-            final ExecutorHolder executorHolder = entry.getValue().build(executorSettings, threadContext);
+            final ExecutorHolder executorHolder = entry.getValue().build(executorSettings);
             if (executors.containsKey(executorHolder.info.getName())) {
                 throw new IllegalStateException("duplicate executors with name [" + executorHolder.info.getName() + "] registered");
             }
@@ -201,7 +181,7 @@ public class ThreadPool implements Scheduler, Closeable {
             executors.put(entry.getKey(), executorHolder);
         }
 
-        executors.put(Names.SAME, new ExecutorHolder(DIRECT_EXECUTOR, new Info(Names.SAME, ThreadPoolType.DIRECT)));
+        executors.put(Names.SAME, new ExecutorHolder(EsExecutors.directExecutor(), new Info(Names.SAME, ThreadPoolType.DIRECT)));
         this.executors = unmodifiableMap(executors);
 
         this.scheduler = Scheduler.initScheduler(settings);
@@ -232,7 +212,7 @@ public class ThreadPool implements Scheduler, Closeable {
     }
 
     public ThreadPoolStats stats() {
-        List<ThreadPoolStats.Stats> stats = new ArrayList<>();
+        ArrayList<ThreadPoolStats.Stats> stats = new ArrayList<>(executors.size() - 1); // "same" is excluded
         for (ExecutorHolder holder : executors.values()) {
             final String name = holder.info.getName();
             // no need to have info on "same" thread pool
@@ -340,11 +320,6 @@ public class ThreadPool implements Scheduler, Closeable {
                 command, executor), e));
     }
 
-    @Override
-    public Runnable preserveContext(Runnable command) {
-        return getThreadContext().preserveContext(command);
-    }
-
     protected final void stopCachedTimeThread() {
         cachedTimeThread.running = false;
         cachedTimeThread.interrupt();
@@ -408,10 +383,6 @@ public class ThreadPool implements Scheduler, Closeable {
 
     static int halfNumberOfProcessorsMaxTen(int numberOfProcessors) {
         return boundedBy((numberOfProcessors + 1) / 2, 1, 10);
-    }
-
-    static int twiceNumberOfProcessors(int numberOfProcessors) {
-        return boundedBy(2 * numberOfProcessors, 2, Integer.MAX_VALUE);
     }
 
     public static int searchThreadPoolSize(int availableProcessors) {
@@ -530,7 +501,7 @@ public class ThreadPool implements Scheduler, Closeable {
         public final Info info;
 
         ExecutorHolder(Executor executor, Info info) {
-            assert executor instanceof EsThreadPoolExecutor || executor == DIRECT_EXECUTOR
+            assert executor instanceof EsThreadPoolExecutor || executor == EsExecutors.directExecutor()
                 : "Executor must either be the DIRECT_EXECUTOR or an instance of EsThreadPoolExecutor";
             this.executor = executor;
             this.info = info;
@@ -678,11 +649,6 @@ public class ThreadPool implements Scheduler, Closeable {
 
     @Override
     public void close() {
-        threadContext.close();
-    }
-
-    public ThreadContext getThreadContext() {
-        return threadContext;
     }
 
     public static boolean assertNotScheduleThread(String reason) {

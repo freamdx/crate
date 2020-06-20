@@ -57,7 +57,6 @@ import org.elasticsearch.common.network.NetworkService;
 import org.elasticsearch.common.settings.Setting.Property;
 import org.elasticsearch.common.util.PageCacheRecycler;
 import org.elasticsearch.common.util.concurrent.EsExecutors;
-import org.elasticsearch.common.util.concurrent.ThreadContext;
 import org.elasticsearch.discovery.DiscoveryModule;
 import org.elasticsearch.discovery.DiscoverySettings;
 import org.elasticsearch.discovery.PeerFinder;
@@ -70,10 +69,8 @@ import org.elasticsearch.http.HttpTransportSettings;
 import org.elasticsearch.index.IndexModule;
 import org.elasticsearch.indices.IndexingMemoryController;
 import org.elasticsearch.indices.IndicesQueryCache;
-import org.elasticsearch.indices.IndicesService;
 import org.elasticsearch.indices.analysis.HunspellService;
 import org.elasticsearch.indices.breaker.HierarchyCircuitBreakerService;
-import org.elasticsearch.indices.fielddata.cache.IndicesFieldDataCache;
 import org.elasticsearch.indices.recovery.RecoverySettings;
 import org.elasticsearch.indices.store.IndicesStore;
 import org.elasticsearch.monitor.fs.FsService;
@@ -325,8 +322,6 @@ public final class ClusterSettings extends AbstractScopedSettings {
         NetworkService.TCP_SEND_BUFFER_SIZE,
         NetworkService.TCP_RECEIVE_BUFFER_SIZE,
         NetworkService.TCP_CONNECT_TIMEOUT,
-        IndicesService.INDICES_CACHE_CLEAN_INTERVAL_SETTING,
-        IndicesFieldDataCache.INDICES_FIELDDATA_CACHE_SIZE_KEY,
         HunspellService.HUNSPELL_LAZY_LOAD,
         HunspellService.HUNSPELL_IGNORE_CASE,
         HunspellService.HUNSPELL_DICTIONARY_OPTIONS,
@@ -354,7 +349,6 @@ public final class ClusterSettings extends AbstractScopedSettings {
         ClusterName.CLUSTER_NAME_SETTING,
         ClusterModule.SHARDS_ALLOCATOR_TYPE_SETTING,
         EsExecutors.PROCESSORS_SETTING,
-        ThreadContext.DEFAULT_HEADERS_SETTING,
         Loggers.LOG_DEFAULT_LEVEL_SETTING,
         Loggers.LOG_LEVEL_SETTING,
         NodeEnvironment.MAX_LOCAL_STORAGE_NODES_SETTING,

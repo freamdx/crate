@@ -48,7 +48,6 @@ public class QuerySplitterTest extends CrateDummyClusterServiceUnitTest {
     @Before
     public void prepare() throws Exception {
         expressions = new SqlExpressions(T3.sources(clusterService));
-        expressions.context().allowEagerNormalize(false);
     }
 
     private Symbol asSymbol(String expression) {
@@ -57,7 +56,7 @@ public class QuerySplitterTest extends CrateDummyClusterServiceUnitTest {
 
     @Test
     public void testSplitWithQueryMerge() throws Exception {
-        Symbol symbol = asSymbol("t1.a = 10 and (t2.b = 30 or t2.b = 20) and t1.x = 1");
+        Symbol symbol = asSymbol("t1.a = '10' and (t2.b = '30' or t2.b = '20') and t1.x = 1");
         Map<Set<RelationName>, Symbol> split = QuerySplitter.split(symbol);
         assertThat(split.size(), is(2));
         assertThat(split.get(Sets.newHashSet(tr1)), isSQL("((doc.t1.a = '10') AND (doc.t1.x = 1))"));
@@ -66,16 +65,17 @@ public class QuerySplitterTest extends CrateDummyClusterServiceUnitTest {
 
     @Test
     public void test_query_splitter_retains_literals() {
-        Symbol symbol = asSymbol("t1.a = 10 and t1.x = t2.y and (false)");
+        expressions.context().allowEagerNormalize(false);
+        Symbol symbol = asSymbol("t1.a = 10::text and t1.x = t2.y and (false)");
         Map<Set<RelationName>, Symbol> split = QuerySplitter.split(symbol);
         assertThat(split.size(), is(2));
-        assertThat(split.get(Set.of(tr1)), isSQL("(doc.t1.a = '10')"));
+        assertThat(split.get(Set.of(tr1)), isSQL("(doc.t1.a = cast(10 AS text))"));
         assertThat(split.get(Set.of(tr1, tr2)), isSQL("((doc.t1.x = doc.t2.y) AND false)"));
     }
 
     @Test
     public void testSplitDownTo1Relation() throws Exception {
-        Symbol symbol = asSymbol("t1.a = 10 and (t2.b = 30 or t2.b = 20)");
+        Symbol symbol = asSymbol("t1.a = '10' and (t2.b = '30' or t2.b = '20')");
         Map<Set<RelationName>, Symbol> split = QuerySplitter.split(symbol);
         assertThat(split.size(), is(2));
         assertThat(split.get(Sets.newHashSet(tr1)), isSQL("(doc.t1.a = '10')"));
@@ -84,7 +84,7 @@ public class QuerySplitterTest extends CrateDummyClusterServiceUnitTest {
 
     @Test
     public void testMixedSplit() throws Exception {
-        Symbol symbol = asSymbol("t1.a = 10 and (t2.b = t3.c)");
+        Symbol symbol = asSymbol("t1.a = '10' and (t2.b = t3.c)");
         Map<Set<RelationName>, Symbol> split = QuerySplitter.split(symbol);
         assertThat(split.size(), is(2));
         assertThat(split.get(Sets.newHashSet(tr1)), isSQL("(doc.t1.a = '10')"));

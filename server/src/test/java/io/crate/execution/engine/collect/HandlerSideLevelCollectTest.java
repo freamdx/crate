@@ -71,6 +71,7 @@ import java.util.UUID;
 
 import static org.hamcrest.core.Is.is;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 @ESIntegTestCase.ClusterScope(numDataNodes = 1, numClientNodes = 0, supportsDedicatedMasters = false)
 public class HandlerSideLevelCollectTest extends SQLTransportIntegrationTest {
@@ -130,7 +131,9 @@ public class HandlerSideLevelCollectTest extends SQLTransportIntegrationTest {
 
     private Bucket collect(RoutedCollectPhase collectPhase) throws Exception {
         TestingRowConsumer consumer = new TestingRowConsumer();
-        BatchIterator<Row> bi = operation.createIterator(txnCtx, collectPhase, consumer.requiresScroll(), mock(CollectTask.class));
+        CollectTask collectTask = mock(CollectTask.class);
+        when(collectTask.txnCtx()).thenReturn(txnCtx);
+        BatchIterator<Row> bi = operation.createIterator(txnCtx, collectPhase, consumer.requiresScroll(), collectTask);
         consumer.accept(bi, null);
         return new CollectionBucket(consumer.getResult());
     }
@@ -152,7 +155,7 @@ public class HandlerSideLevelCollectTest extends SQLTransportIntegrationTest {
         List<Symbol> arguments = Arrays.asList(tableNameRef, Literal.of("shards"));
         FunctionImplementation eqImpl
             = functions.get(null, EqOperator.NAME, arguments, SearchPath.pathWithPGCatalogAndDoc());
-        Function whereClause = new Function(eqImpl.info(), arguments);
+        Function whereClause = new Function(eqImpl.info(), eqImpl.signature(),  arguments);
 
         RoutedCollectPhase collectNode = collectNode(routing, toCollect, RowGranularity.DOC, new WhereClause(whereClause));
         Bucket result = collect(collectNode);

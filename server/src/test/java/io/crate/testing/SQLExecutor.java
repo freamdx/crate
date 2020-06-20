@@ -22,8 +22,6 @@
 
 package io.crate.testing;
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
 import io.crate.Constants;
 import io.crate.action.sql.Option;
 import io.crate.action.sql.SessionContext;
@@ -47,6 +45,7 @@ import io.crate.analyze.relations.RelationAnalyzer;
 import io.crate.analyze.relations.StatementAnalysisContext;
 import io.crate.auth.user.User;
 import io.crate.auth.user.UserManager;
+import io.crate.common.collections.MapBuilder;
 import io.crate.data.Row;
 import io.crate.execution.ddl.RepositoryService;
 import io.crate.execution.dsl.projection.builder.ProjectionBuilder;
@@ -72,6 +71,7 @@ import io.crate.metadata.doc.TestingDocTableInfoFactory;
 import io.crate.metadata.information.InformationSchemaInfo;
 import io.crate.metadata.pgcatalog.PgCatalogSchemaInfo;
 import io.crate.metadata.settings.CrateSettings;
+import io.crate.metadata.settings.session.SessionSettingRegistry;
 import io.crate.metadata.sys.SysSchemaInfo;
 import io.crate.metadata.table.Operation;
 import io.crate.metadata.table.SchemaInfo;
@@ -85,6 +85,7 @@ import io.crate.planner.node.ddl.CreateBlobTablePlan;
 import io.crate.planner.node.ddl.CreateTablePlan;
 import io.crate.planner.operators.LogicalPlan;
 import io.crate.planner.operators.SubQueryResults;
+import io.crate.planner.optimizer.LoadedRules;
 import io.crate.sql.parser.SqlParser;
 import io.crate.sql.tree.CreateBlobTable;
 import io.crate.sql.tree.CreateTable;
@@ -140,6 +141,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
+import java.util.Set;
 import java.util.UUID;
 
 import static io.crate.analyze.TableDefinitions.DEEPLY_NESTED_TABLE_DEFINITION;
@@ -222,12 +224,16 @@ public class SQLExecutor {
         private TableStats tableStats = new TableStats();
         private boolean hasValidLicense = true;
         private Schemas schemas;
+        private LoadedRules loadedRules = new LoadedRules();
+        private SessionSettingRegistry sessionSettingRegistry = new SessionSettingRegistry(Set.of(loadedRules));
 
         private Builder(ClusterService clusterService,
                         int numNodes,
                         Random random,
                         List<AnalysisPlugin> analysisPlugins) {
-            Preconditions.checkArgument(numNodes >= 1, "Must have at least 1 node");
+            if (numNodes < 1) {
+                throw new IllegalArgumentException("Must have at least 1 node");
+            }
             this.random = random;
             this.clusterService = clusterService;
             addNodesToClusterState(numNodes);
@@ -394,7 +400,8 @@ public class SQLExecutor {
                         mock(TransportDeleteRepositoryAction.class),
                         mock(TransportPutRepositoryAction.class)
                     ),
-                    userManager
+                    userManager,
+                    sessionSettingRegistry
                 ),
                 new Planner(
                     Settings.EMPTY,
@@ -405,7 +412,9 @@ public class SQLExecutor {
                     null,
                     schemas,
                     userManager,
-                    () -> hasValidLicense
+                    () -> hasValidLicense,
+                    loadedRules,
+                    sessionSettingRegistry
                 ),
                 relationAnalyzer,
                 new SessionContext(Option.NONE, user, searchPath),
@@ -696,7 +705,7 @@ public class SQLExecutor {
      * If tables are used here they must also be registered in the SQLExecutor having used {@link Builder#addTable(String)}
      */
     public Symbol asSymbol(String expression) {
-        ImmutableMap.Builder<RelationName, AnalyzedRelation> sources = ImmutableMap.builder();
+        MapBuilder<RelationName, AnalyzedRelation> sources = MapBuilder.newMapBuilder();
         for (SchemaInfo schemaInfo : schemas) {
             for (TableInfo tableInfo : schemaInfo.getTables()) {
                 if (tableInfo instanceof DocTableInfo) {
@@ -710,7 +719,11 @@ public class SQLExecutor {
             functions,
             coordinatorTxnCtx,
             ParamTypeHints.EMPTY,
-            new FullQualifiedNameFieldProvider(sources.build(), ParentRelations.NO_PARENTS, sessionContext.searchPath().currentSchema()),
+            new FullQualifiedNameFieldProvider(
+                sources.immutableMap(),
+                ParentRelations.NO_PARENTS,
+                sessionContext.searchPath().currentSchema()
+            ),
             new SubqueryAnalyzer(
                 relAnalyzer,
                 new StatementAnalysisContext(ParamTypeHints.EMPTY, Operation.READ, coordinatorTxnCtx)

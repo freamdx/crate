@@ -22,13 +22,13 @@
 
 package io.crate.planner.statement;
 
-import com.google.common.annotations.VisibleForTesting;
 import io.crate.analyze.AnalyzedCopyTo;
 import io.crate.analyze.BoundCopyTo;
 import io.crate.analyze.PartitionPropertiesAnalyzer;
 import io.crate.analyze.SymbolEvaluator;
 import io.crate.analyze.WhereClause;
 import io.crate.analyze.relations.DocTableRelation;
+import io.crate.common.annotations.VisibleForTesting;
 import io.crate.common.collections.Lists2;
 import io.crate.data.Row;
 import io.crate.data.RowConsumer;
@@ -169,10 +169,14 @@ public final class CopyToPlan implements Plan {
     }
 
     private static LogicalPlan optimizeCollect(PlannerContext context, TableStats tableStats, LogicalPlan collect) {
-        RewriteCollectToGet rewriteCollectToGet = new RewriteCollectToGet(context.functions());
+        RewriteCollectToGet rewriteCollectToGet = new RewriteCollectToGet();
         Match<Collect> match = rewriteCollectToGet.pattern().accept(collect, Captures.empty());
         if (match.isPresent()) {
-            LogicalPlan plan = rewriteCollectToGet.apply(match.value(), match.captures(), tableStats, context.transactionContext());
+            LogicalPlan plan = rewriteCollectToGet.apply(match.value(),
+                                                         match.captures(),
+                                                         tableStats,
+                                                         context.transactionContext(),
+                                                         context.functions());
             return plan == null ? collect : plan;
         }
         return collect;

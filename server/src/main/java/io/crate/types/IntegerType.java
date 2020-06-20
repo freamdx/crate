@@ -61,12 +61,12 @@ public class IntegerType extends DataType<Integer> implements Streamer<Integer>,
     public Integer value(Object value) {
         if (value == null) {
             return null;
-        }
-        if (value instanceof Integer) {
+        } else if (value instanceof Integer) {
             return (Integer) value;
-        }
-        if (value instanceof String) {
+        } else if (value instanceof String) {
             return Integer.parseInt((String) value);
+        } else if (value instanceof Regproc) {
+            return ((Regproc) value).oid();
         }
 
         long longVal = ((Number) value).longValue();

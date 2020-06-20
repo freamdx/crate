@@ -22,6 +22,7 @@
 
 package io.crate.common.collections;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
@@ -59,11 +60,7 @@ public final class MapBuilder<K, V> {
         return this.map;
     }
 
-    /**
-     * Build an immutable copy of the map under construction. Always copies the map under construction. Prefer building
-     * a HashMap by hand and wrapping it in an unmodifiableMap
-     */
     public Map<K, V> immutableMap() {
-        return Map.copyOf(map);
+        return Collections.unmodifiableMap(map);
     }
 }

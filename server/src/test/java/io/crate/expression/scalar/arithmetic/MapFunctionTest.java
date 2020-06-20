@@ -34,19 +34,19 @@ public class MapFunctionTest extends AbstractScalarFunctionsTest {
     @Test
     public void testMapWithWrongNumOfArguments() {
         expectedException.expect(UnsupportedOperationException.class);
-        expectedException.expectMessage("unknown function: _map(text, bigint, text)");
+        expectedException.expectMessage("unknown function: _map(text, integer, text)");
         assertEvaluate("_map('foo', 1, 'bar')", null);
     }
 
     @Test
     public void testKeyNotOfTypeString() {
-        assertEvaluate("_map(10, 2)", Collections.singletonMap("10", 2L));
+        assertEvaluate("_map(10, 2)", Collections.singletonMap("10", 2));
     }
 
     @Test
     public void testEvaluation() {
         Map<String, Object> m = new HashMap<>();
-        m.put("foo", 10L);
+        m.put("foo", 10);
         // minimum args
         assertEvaluate("_map('foo', 10)", m);
 

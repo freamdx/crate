@@ -52,11 +52,14 @@ public abstract class DataType<T> implements Comparable<DataType<?>>, Writeable,
         BYTE,
         BOOLEAN,
         SHORT,
+        TIMETZ,
         INTEGER,
+        REGPROC,
         INTERVAL,
         TIMESTAMP_WITH_TIME_ZONE,
         TIMESTAMP,
         LONG,
+        IP,
         FLOAT,
         DOUBLE,
         ARRAY,
@@ -81,6 +84,38 @@ public abstract class DataType<T> implements Comparable<DataType<?>>, Writeable,
     public abstract String getName();
 
     public abstract Streamer<T> streamer();
+
+    /**
+     * Must be used only in the cast functions.
+     *
+     * @param value The value to cast to the target {@link DataType}.
+     * @return The value casted the target {@link DataType}.
+     */
+    public T implicitCast(Object value) throws IllegalArgumentException, ClassCastException {
+        return value(value);
+    }
+
+    /**
+     * Must be used only in the cast functions. The explicit cast
+     * falls back to the implicit cast if it is not overwritten by
+     * a data type subclass.
+     *
+     * @param value The value to cast to the target {@link DataType}.
+     * @return The value casted the target {@link DataType}.
+     */
+    public T explicitCast(Object value) throws IllegalArgumentException, ClassCastException {
+        return implicitCast(value);
+    }
+
+    /**
+     * To prepare a value of the same {@link DataType<T>} for insertion.
+     *
+     * @param value The value of the {@link DataType<T>}.
+     * @return The prepared for insertion value of the {@link DataType<T>}.
+     */
+    public T valueForInsert(Object value) {
+        return (T) value;
+    }
 
     public abstract T value(Object value) throws IllegalArgumentException, ClassCastException;
 
@@ -107,7 +142,7 @@ public abstract class DataType<T> implements Comparable<DataType<?>>, Writeable,
      * @param other the DataType to check conversion to
      * @return true or false
      */
-    public boolean isConvertableTo(DataType<?> other) {
+    public boolean isConvertableTo(DataType<?> other, boolean explicitCast) {
         if (this.equals(other)) {
             return true;
         }

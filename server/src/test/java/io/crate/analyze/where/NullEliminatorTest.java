@@ -44,7 +44,6 @@ public class NullEliminatorTest extends CrateDummyClusterServiceUnitTest {
     @Before
     public void prepare() throws Exception {
         sqlExpressions = new SqlExpressions(T3.sources(clusterService));
-        sqlExpressions.context().allowEagerNormalize(false);
     }
 
     private void assertReplaced(String expression, String expectedString) {
@@ -59,23 +58,34 @@ public class NullEliminatorTest extends CrateDummyClusterServiceUnitTest {
     private void assertReplaced(String expression, String expectedString, Function<Symbol, Symbol> postProcessor) {
         Symbol query = sqlExpressions.asSymbol(expression);
         Symbol replacedQuery = NullEliminator.eliminateNullsIfPossible(query, postProcessor);
-        Symbol expectedSymbol = sqlExpressions.asSymbol(expectedString);
-        assertThat(replacedQuery, is(expectedSymbol));
+        assertThat(replacedQuery.toString(), is(expectedString));
     }
 
     @Test
     public void testNullsReplaced() throws Exception {
-        assertReplaced("null and x = null", "false and x = null");
-        assertReplaced("null or x = 1 or null", "false or x = 1 or false");
-        assertReplaced("not(null and x = 1)", "not(true and x = 1)");
-        assertReplaced("not(null or not(null and x = 1))", "not(true or not(false and x = 1))");
-        assertReplaced("not(null and x = 1) and not(null or x = 2)", "not(true and x = 1) and not(true or x = 2)");
-        assertReplaced("null or coalesce(null or x = 1, true)", "false or coalesce(null or x = 1, true)");
+        sqlExpressions.context().allowEagerNormalize(false);
+        assertReplaced("null and x = null", "(_cast(NULL, 'boolean') AND (x = _cast(NULL, 'integer')))");
+        assertReplaced(
+            "null or x = 1 or null",
+            "((_cast(NULL, 'boolean') OR (x = 1)) OR _cast(NULL, 'boolean'))");
+        assertReplaced(
+            "not(null and x = 1)",
+            "(NOT (_cast(NULL, 'boolean') AND (x = 1)))");
+        assertReplaced(
+            "not(null or not(null and x = 1))",
+            "(NOT (_cast(NULL, 'boolean') OR (NOT (_cast(NULL, 'boolean') AND (x = 1)))))");
+        assertReplaced(
+            "not(null and x = 1) and not(null or x = 2)",
+            "((NOT (_cast(NULL, 'boolean') AND (x = 1))) AND " +
+            "(NOT (_cast(NULL, 'boolean') OR (x = 2))))");
+        assertReplaced(
+            "null or coalesce(null or x = 1, true)",
+            "(_cast(NULL, 'boolean') OR coalesce((_cast(NULL, 'boolean') OR (x = 1)), true))");
     }
 
     @Test
     public void testNullsReplacedAndNormalized() {
         assertReplacedAndNormalized("null and x = 1", "false");
-        assertReplacedAndNormalized("null or x > 1", "x > 1");
+        assertReplacedAndNormalized("null or x > 1", "(x > 1)");
     }
 }

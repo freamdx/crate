@@ -22,11 +22,9 @@
 
 package io.crate.expression;
 
-import io.crate.metadata.FuncResolver;
-import io.crate.metadata.FunctionIdent;
+import io.crate.metadata.FunctionProvider;
 import io.crate.metadata.FunctionImplementation;
 import io.crate.metadata.FunctionName;
-import io.crate.metadata.FunctionResolver;
 import io.crate.metadata.functions.Signature;
 import io.crate.types.DataType;
 import org.elasticsearch.common.inject.AbstractModule;
@@ -41,23 +39,11 @@ import java.util.function.BiFunction;
 
 public abstract class AbstractFunctionModule<T extends FunctionImplementation> extends AbstractModule {
 
-    private Map<FunctionIdent, T> functions = new HashMap<>();
-    private Map<FunctionName, FunctionResolver> resolver = new HashMap<>();
-    private MapBinder<FunctionIdent, FunctionImplementation> functionBinder;
-    private MapBinder<FunctionName, FunctionResolver> resolverBinder;
-
-    private HashMap<FunctionName, List<FuncResolver>> functionImplementations = new HashMap<>();
-    private MapBinder<FunctionName, List<FuncResolver>> implementationsBinder;
-
-    /**
-     * @deprecated Use {@link #register(Signature, BiFunction)} instead.
-     */
-    public void register(String name, FunctionResolver functionResolver) {
-        resolver.put(new FunctionName(name), functionResolver);
-    }
+    private HashMap<FunctionName, List<FunctionProvider>> functionImplementations = new HashMap<>();
+    private MapBinder<FunctionName, List<FunctionProvider>> implementationsBinder;
 
     public void register(Signature signature, BiFunction<Signature, List<DataType>, FunctionImplementation> factory) {
-        List<FuncResolver> functions = functionImplementations.computeIfAbsent(
+        List<FunctionProvider> functions = functionImplementations.computeIfAbsent(
             signature.getName(),
             k -> new ArrayList<>());
         var duplicate = functions.stream().filter(fr -> fr.getSignature().equals(signature)).findFirst();
@@ -65,7 +51,7 @@ public abstract class AbstractFunctionModule<T extends FunctionImplementation> e
             throw new IllegalStateException(
                 "A function already exists for signature = " + signature);
         }
-        functions.add(new FuncResolver(signature, factory));
+        functions.add(new FunctionProvider(signature, factory));
     }
 
     public abstract void configureFunctions();
@@ -73,28 +59,12 @@ public abstract class AbstractFunctionModule<T extends FunctionImplementation> e
     @Override
     protected void configure() {
         configureFunctions();
-        // bind all registered functions and resolver
-        // by doing it here instead of the register functions, plugins can also use the
-        // register functions in their onModule(...) hooks
-        functionBinder = MapBinder.newMapBinder(binder(), FunctionIdent.class, FunctionImplementation.class);
-        resolverBinder = MapBinder.newMapBinder(binder(), FunctionName.class, FunctionResolver.class);
-        for (Map.Entry<FunctionIdent, T> entry : functions.entrySet()) {
-            functionBinder.addBinding(entry.getKey()).toInstance(entry.getValue());
-        }
-        for (Map.Entry<FunctionName, FunctionResolver> entry : resolver.entrySet()) {
-            resolverBinder.addBinding(entry.getKey()).toInstance(entry.getValue());
-        }
 
-        // clear registration maps
-        functions = null;
-        resolver = null;
-
-        // New signature registry
         implementationsBinder = MapBinder.newMapBinder(
             binder(),
             new TypeLiteral<FunctionName>() {},
-            new TypeLiteral<List<FuncResolver>>() {});
-        for (Map.Entry<FunctionName, List<FuncResolver>> entry : functionImplementations.entrySet()) {
+            new TypeLiteral<List<FunctionProvider>>() {});
+        for (Map.Entry<FunctionName, List<FunctionProvider>> entry : functionImplementations.entrySet()) {
             implementationsBinder.addBinding(entry.getKey()).toProvider(entry::getValue);
         }
 

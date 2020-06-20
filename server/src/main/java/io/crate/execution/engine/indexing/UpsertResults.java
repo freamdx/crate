@@ -22,7 +22,6 @@
 
 package io.crate.execution.engine.indexing;
 
-import com.google.common.collect.ImmutableMap;
 import io.crate.data.Row;
 import io.crate.data.RowN;
 
@@ -37,13 +36,13 @@ import java.util.stream.Stream;
 class UpsertResults {
 
     private final Map<String, Result> resultsByUri = new HashMap<>(1);
-    private final ImmutableMap<String, String> nodeInfo;
+    private final Map<String, String> nodeInfo;
 
     UpsertResults() {
         this.nodeInfo = null;
     }
 
-    UpsertResults(ImmutableMap<String, String> nodeInfo) {
+    UpsertResults(Map<String, String> nodeInfo) {
         this.nodeInfo = nodeInfo;
     }
 
@@ -120,6 +119,7 @@ class UpsertResults {
 
         private static final String ERROR_COUNT_KEY = "count";
         private static final String LINE_NUMBERS_KEY = "line_numbers";
+        private static final int MAX_LINE_NUMBERS_ALLOWED = 50;
 
         private long successRowCount = 0;
         private long errorRowCount = 0;
@@ -151,12 +151,16 @@ class UpsertResults {
             if (errorEntry == null) {
                 errorEntry = new HashMap<>(1);
                 errors.put(msg, errorEntry);
-                currentLineNumbers = new ArrayList<>(lineNumbers);
+                int lineNumbersTopIndex = Math.min(lineNumbers.size(), MAX_LINE_NUMBERS_ALLOWED);
+                currentLineNumbers = new ArrayList<>(lineNumbers.subList(0, lineNumbersTopIndex));
             } else {
                 cnt = (Long) errorEntry.get(ERROR_COUNT_KEY);
                 //noinspection unchecked
                 currentLineNumbers = (List<Long>) errorEntry.get(LINE_NUMBERS_KEY);
-                currentLineNumbers.addAll(lineNumbers);
+                int allowedLineNumbersCount = MAX_LINE_NUMBERS_ALLOWED - currentLineNumbers.size();
+                if (lineNumbers.size() <= allowedLineNumbersCount) {
+                    currentLineNumbers.addAll(lineNumbers);
+                }
             }
             errorEntry.put(ERROR_COUNT_KEY, cnt + increaseBy);
             errorEntry.put(LINE_NUMBERS_KEY, currentLineNumbers);

@@ -86,9 +86,11 @@ number of replicas.
     | pg_catalog         | pg_constraint           | BASE TABLE |             NULL | NULL               |
     | pg_catalog         | pg_database             | BASE TABLE |             NULL | NULL               |
     | pg_catalog         | pg_description          | BASE TABLE |             NULL | NULL               |
+    | pg_catalog         | pg_enum                 | BASE TABLE |             NULL | NULL               |
     | pg_catalog         | pg_index                | BASE TABLE |             NULL | NULL               |
     | pg_catalog         | pg_namespace            | BASE TABLE |             NULL | NULL               |
     | pg_catalog         | pg_proc                 | BASE TABLE |             NULL | NULL               |
+    | pg_catalog         | pg_range                | BASE TABLE |             NULL | NULL               |
     | pg_catalog         | pg_settings             | BASE TABLE |             NULL | NULL               |
     | pg_catalog         | pg_stats                | BASE TABLE |             NULL | NULL               |
     | pg_catalog         | pg_type                 | BASE TABLE |             NULL | NULL               |
@@ -111,7 +113,7 @@ number of replicas.
     | sys                | summits                 | BASE TABLE |             NULL | NULL               |
     | sys                | users                   | BASE TABLE |             NULL | NULL               |
     +--------------------+-------------------------+------------+------------------+--------------------+
-    SELECT 44 rows in set (... sec)
+    SELECT 46 rows in set (... sec)
 
 The table also contains additional information such as specified routing
 (:ref:`sql_ddl_sharding`) and partitioned by (:ref:`partitioned_tables`)
@@ -376,9 +378,9 @@ infinite recursion of your mind, beware!)::
 +-------------------------------+-----------------------------------------------+---------------+
 | ``column_default``            | The default expression of the column          | ``TEXT``      |
 +-------------------------------+-----------------------------------------------+---------------+
-| ``character_maximum_length``  | Not implemented (always returns ``NULL``)     | ``INTEGER``   |
-|                               |                                               |               |
-|                               | Please refer to :ref:`data-type-text` type    |               |
+| ``character_maximum_length``  | If the data type is a :ref:`character type    | ``INTEGER``   |
+|                               | <character-data-types>` then return the       |               |
+|                               | declared length limit; otherwise ``NULL``.    |               |
 +-------------------------------+-----------------------------------------------+---------------+
 | ``character_octet_length``    | Not implemented (always returns ``NULL``)     | ``INTEGER``   |
 |                               |                                               |               |

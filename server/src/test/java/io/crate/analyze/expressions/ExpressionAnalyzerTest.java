@@ -35,10 +35,10 @@ import io.crate.analyze.relations.TableRelation;
 import io.crate.auth.user.User;
 import io.crate.exceptions.ConversionException;
 import io.crate.expression.operator.EqOperator;
-import io.crate.expression.operator.GtOperator;
 import io.crate.expression.operator.LikeOperators;
 import io.crate.expression.operator.LtOperator;
 import io.crate.expression.operator.any.AnyOperators;
+import io.crate.expression.scalar.cast.ImplicitCastFunction;
 import io.crate.expression.scalar.conditional.CoalesceFunction;
 import io.crate.expression.symbol.Function;
 import io.crate.expression.symbol.Literal;
@@ -191,7 +191,7 @@ public class ExpressionAnalyzerTest extends CrateDummyClusterServiceUnitTest {
             new QualifiedName("subscript"),
             ImmutableList.of(
                 new ArrayLiteral(ImmutableList.of(new StringLiteral("obj"))),
-                new LongLiteral("1")));
+                new LongLiteral(1)));
 
         Symbol symbol = expressionAnalyzer.convert(subscriptFunctionCall, expressionAnalysisContext);
         assertThat(symbol, isLiteral("obj"));
@@ -307,44 +307,37 @@ public class ExpressionAnalyzerTest extends CrateDummyClusterServiceUnitTest {
     }
 
     @Test
-    public void testColumnsCannotBeCastedToLiteralType() {
+    public void testColumnsAreCastedToLiteralType() {
         Function symbol = (Function) executor.asSymbol("doc.t2.i = 1.1");
-        assertThat(symbol.arguments().get(0), isReference("i"));
-        assertThat(symbol.arguments().get(0).valueType(), is(DataTypes.INTEGER));
-    }
-
-    @Test
-    public void testIncompatibleLiteralThrowsException() {
-        expectedException.expect(ConversionException.class);
-        expectedException.expectMessage("Cannot cast `2147483648` of type `bigint` to type `integer`");
-        executor.asSymbol("doc.t2.i = 1 + " + Integer.MAX_VALUE);
+        assertThat(symbol, isSQL("(_cast(doc.t2.i, 'double precision') = 1.1)"));
     }
 
     @Test
     public void testFunctionsCanBeCasted() {
-        Function symbol2 = (Function) executor.asSymbol("doc.t5.w = doc.t2.i + 1.2");
+        Function symbol2 = (Function) executor.asSymbol("doc.t5.w = doc.t2.i + 1::smallint");
         assertThat(symbol2, isFunction(EqOperator.NAME));
         assertThat(symbol2.arguments().get(0), isReference("w"));
-        assertThat(symbol2.arguments().get(1), isFunction("to_bigint"));
-        assertThat(symbol2.arguments().get(1).valueType(), is(DataTypes.LONG));
+        assertThat(
+            symbol2.arguments().get(1),
+            isFunction(
+                ImplicitCastFunction.NAME,
+                List.of(DataTypes.INTEGER, DataTypes.STRING)
+            )
+        );
     }
 
     @Test
     public void testColumnsCanBeCastedWhenOnBothSidesOfOperator() {
         Function symbol = (Function) executor.asSymbol("doc.t5.i < doc.t5.w");
         assertThat(symbol, isFunction(LtOperator.NAME));
-        assertThat(symbol.arguments().get(0), isFunction("to_bigint"));
-        assertThat(symbol.arguments().get(0).valueType(), is(DataTypes.LONG));
+        assertThat(
+            symbol.arguments().get(0),
+            isFunction(
+                ImplicitCastFunction.NAME,
+                List.of(DataTypes.INTEGER, DataTypes.STRING)
+            )
+        );
         assertThat(symbol.arguments().get(1).valueType(), is(DataTypes.LONG));
-    }
-
-    @Test
-    public void testLiteralIsCastedToColumnValue() {
-        Function symbol = (Function) executor.asSymbol("5::long < doc.t1.i");
-        assertThat(symbol, isFunction(GtOperator.NAME));
-        assertThat(symbol.arguments().get(0).valueType(), is(DataTypes.INTEGER));
-        assertThat(symbol.arguments().get(1).valueType(), is(DataTypes.INTEGER));
-        assertThat(symbol.arguments().get(1), isLiteral(5));
     }
 
     @Test
@@ -365,24 +358,24 @@ public class ExpressionAnalyzerTest extends CrateDummyClusterServiceUnitTest {
     @Test
     public void testParameterExpressionInAny() throws Exception {
         Symbol s = expressions.asSymbol("5 = ANY(?)");
-        assertThat(s, isFunction(AnyOperators.Names.EQ, isLiteral(5L), instanceOf(ParameterSymbol.class)));
+        assertThat(s, isFunction(AnyOperators.Type.EQ.opName(), isLiteral(5), instanceOf(ParameterSymbol.class)));
     }
 
     @Test
     public void testParameterExpressionInLikeAny() throws Exception {
         Symbol s = expressions.asSymbol("5 LIKE ANY(?)");
-        assertThat(s, isFunction(LikeOperators.ANY_LIKE, isLiteral(5L), instanceOf(ParameterSymbol.class)));
+        assertThat(s, isFunction(LikeOperators.ANY_LIKE, isLiteral(5), instanceOf(ParameterSymbol.class)));
     }
 
     @Test
     public void testAnyWithArrayOnBothSidesResultsInNiceErrorMessage() {
-        expectedException.expectMessage("Cannot cast `xs` of type `integer_array` to type `bigint`");
+        expectedException.expectMessage("unknown function: any_=(integer_array, integer_array)");
         executor.analyze("select * from tarr where xs = ANY([10, 20])");
     }
 
     @Test
     public void testCallingUnknownFunctionWithExplicitSchemaRaisesNiceError() {
-        expectedException.expectMessage("unknown function: foo.bar(bigint)");
+        expectedException.expectMessage("unknown function: foo.bar(integer)");
         executor.analyze("select foo.bar(1)");
     }
 

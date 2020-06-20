@@ -1285,7 +1285,7 @@ public class GroupByAggregateTest extends SQLTransportIntegrationTest {
         execute("explain select distinct id from m.tbl limit 2");
         assertThat(
             printedTable(response.rows()),
-            is("TopNDistinct[2 | [id]]\n" +
+            is("TopNDistinct[2::bigint;0 | [id]]\n" +
                "  └ Collect[m.tbl | [id] | true]\n")
         );
         execute("select distinct id from m.tbl limit 2");
@@ -1296,11 +1296,41 @@ public class GroupByAggregateTest extends SQLTransportIntegrationTest {
     }
 
     @Test
+    public void test_select_distinct_with_limit_and_offset_applies_limit_and_offset_on_distinct_resultset() throws Exception {
+        execute("create table tbl (x int)");
+        execute("insert into tbl (x) values (1), (1), (2), (3)");
+        execute("refresh table tbl");
+
+        execute("select distinct x from tbl limit 1 offset 3");
+        assertThat(response.rowCount(), is(0L));
+    }
+
+    @Test
     public void test_group_by_on_subscript_on_object_of_sub_relation() {
         execute("create table tbl (obj object as (x int))");
         execute("insert into tbl (obj) values ({x=10})");
         execute("refresh table tbl");
         execute("select obj['x'] from (select obj from tbl) as t group by obj['x']");
         assertThat(printedTable(response.rows()), Is.is("10\n"));
+    }
+
+    @Test
+    public void test_select_same_aggregate_multiple_times() throws Exception {
+        execute("create table doc.tbl (name text, x int)");
+        execute("insert into doc.tbl (name, x) values ('Apple', 1), ('Apple', 2), ('Apple', 3)");
+        execute("refresh table doc.tbl");
+
+
+        execute("explain select name, count(x), count(x) from doc.tbl group by name");
+        assertThat(
+            printedTable(response.rows()),
+            Is.is(
+                "Eval[name, count(x), count(x)]\n" +
+                "  └ GroupHashAggregate[name | count(x)]\n"+
+                "    └ Collect[doc.tbl | [x, name] | true]\n"
+            )
+        );
+        execute("select name, count(x), count(x) from doc.tbl group by name");
+        assertThat(printedTable(response.rows()), Is.is("Apple| 3| 3\n"));
     }
 }

@@ -24,7 +24,6 @@ package io.crate.expression.symbol.format;
 
 import io.crate.analyze.relations.AnalyzedRelation;
 import io.crate.analyze.relations.TableRelation;
-import io.crate.expression.scalar.FormatFunction;
 import io.crate.expression.symbol.Aggregation;
 import io.crate.expression.symbol.DynamicReference;
 import io.crate.expression.symbol.FetchReference;
@@ -40,6 +39,7 @@ import io.crate.metadata.RelationName;
 import io.crate.metadata.RowGranularity;
 import io.crate.metadata.doc.DocSchemaInfo;
 import io.crate.metadata.doc.DocTableInfo;
+import io.crate.metadata.functions.Signature;
 import io.crate.test.integration.CrateDummyClusterServiceUnitTest;
 import io.crate.testing.SQLExecutor;
 import io.crate.testing.SqlExpressions;
@@ -138,8 +138,13 @@ public class SymbolPrinterTest extends CrateDummyClusterServiceUnitTest {
             DataTypes.LONG,
             FunctionInfo.Type.AGGREGATE
         );
+        Signature signature = Signature.aggregate(
+            "agg",
+            DataTypes.INTEGER.getTypeSignature(),
+            DataTypes.LONG.getTypeSignature()
+        );
         Aggregation a = new Aggregation(
-            functionInfo, DataTypes.LONG, Collections.singletonList(Literal.of(-127)));
+            functionInfo, signature, DataTypes.LONG, Collections.singletonList(Literal.of(-127)));
 
         assertPrint(a, "agg(-127)");
     }
@@ -305,18 +310,18 @@ public class SymbolPrinterTest extends CrateDummyClusterServiceUnitTest {
     public void testStyles() throws Exception {
         Symbol nestedFn = sqlExpressions.asSymbol("abs(sqrt(ln(bar+cast(\"select\" as long)+1+1+1+1+1+1)))");
         assertThat(nestedFn.toString(Style.QUALIFIED),
-            is("abs(sqrt(ln(cast((((((((doc.formatter.bar + cast(doc.formatter.\"select\" AS bigint)) + 1) + 1) + 1) + 1) + 1) + 1) AS double precision))))"));
+            is("abs(sqrt(ln(_cast((((((((doc.formatter.bar + cast(doc.formatter.\"select\" AS bigint)) + 1::bigint) + 1::bigint) + 1::bigint) + 1::bigint) + 1::bigint) + 1::bigint), 'double precision'))))"));
         assertThat(nestedFn.toString(Style.UNQUALIFIED),
-            is("abs(sqrt(ln(cast((((((((bar + cast(\"select\" AS bigint)) + 1) + 1) + 1) + 1) + 1) + 1) AS double precision))))"));
+            is("abs(sqrt(ln(_cast((((((((bar + cast(\"select\" AS bigint)) + 1::bigint) + 1::bigint) + 1::bigint) + 1::bigint) + 1::bigint) + 1::bigint), 'double precision'))))"));
     }
 
     @Test
     public void testFormatOperatorWithStaticInstance() throws Exception {
-        Symbol comparisonOperator = sqlExpressions.asSymbol("bar = 1 and foo = 2");
+        Symbol comparisonOperator = sqlExpressions.asSymbol("bar = 1 and foo = '2'");
         String printed = comparisonOperator.toString(Style.QUALIFIED);
         assertThat(
             printed,
-            is("((doc.formatter.bar = 1) AND (doc.formatter.foo = '2'))")
+            is("((doc.formatter.bar = 1::bigint) AND (doc.formatter.foo = '2'))")
         );
     }
 

@@ -157,7 +157,7 @@ public class PushDownTest extends CrateDummyClusterServiceUnitTest {
 
     @Test
     public void testFilterIsMovedBeneathOrder() {
-        LogicalPlan plan = plan("select * from (select * from t1 order by a) tt where a > 10");
+        LogicalPlan plan = plan("select * from (select * from t1 order by a) tt where a > '10'");
         assertThat(plan, isPlan(
             "Rename[a, x, i] AS tt\n" +
             "  └ OrderBy[a ASC]\n" +
@@ -304,7 +304,7 @@ public class PushDownTest extends CrateDummyClusterServiceUnitTest {
             "SELECT" +
             "  * " +
             "FROM " +
-            "  (SELECT x, generate_series(1, x) FROM t1) tt " +
+            "  (SELECT x, generate_series(1::int, x) FROM t1) tt " +
             "WHERE x > 1"
         );
         var expectedPlan =
@@ -321,7 +321,7 @@ public class PushDownTest extends CrateDummyClusterServiceUnitTest {
             "SELECT" +
             "  * " +
             "FROM " +
-            "  (SELECT x, generate_series(1, x) AS y FROM t1) tt " +
+            "  (SELECT x, generate_series(1::int, x) AS y FROM t1) tt " +
             "WHERE x > 1 AND y > 2"
         );
         var expectedPlan =
@@ -350,7 +350,7 @@ public class PushDownTest extends CrateDummyClusterServiceUnitTest {
             "SELECT x, count(*) FROM t1 GROUP BY 1 HAVING count(*) > 10 AND x > 1"
         );
         var expectedPlan =
-            "Filter[(count(*) > 10)]\n" +
+            "Filter[(count(*) > 10::bigint)]\n" +
             "  └ GroupHashAggregate[x | count(*)]\n" +
             "    └ Collect[doc.t1 | [x] | (x > 1)]";
         assertThat(plan, isPlan(expectedPlan));
@@ -396,7 +396,7 @@ public class PushDownTest extends CrateDummyClusterServiceUnitTest {
             "Rename[id, name] AS u\n" +
             "  └ OrderBy[id ASC name ASC]\n" +
             "    └ OrderBy[id ASC name ASC]\n" +
-            "      └ Get[doc.users | id, name | DocKeys{1}]";
+            "      └ Get[doc.users | id, name | DocKeys{1::bigint}]";
         assertThat(plan, isPlan(expectedPlan));
     }
 }

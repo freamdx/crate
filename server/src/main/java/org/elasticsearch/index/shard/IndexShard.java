@@ -20,6 +20,10 @@
 package org.elasticsearch.index.shard;
 
 import com.carrotsearch.hppc.ObjectLongMap;
+import io.crate.common.Booleans;
+import io.crate.common.collections.Tuple;
+import io.crate.common.io.IOUtils;
+import io.crate.common.unit.TimeValue;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.message.ParameterizedMessage;
 import org.apache.lucene.index.CheckIndex;
@@ -47,10 +51,7 @@ import org.elasticsearch.cluster.routing.IndexShardRoutingTable;
 import org.elasticsearch.cluster.routing.RecoverySource;
 import org.elasticsearch.cluster.routing.RecoverySource.SnapshotRecoverySource;
 import org.elasticsearch.cluster.routing.ShardRouting;
-import io.crate.common.Booleans;
 import org.elasticsearch.common.CheckedRunnable;
-import javax.annotation.Nullable;
-import io.crate.common.collections.Tuple;
 import org.elasticsearch.common.io.stream.BytesStreamOutput;
 import org.elasticsearch.common.lease.Releasable;
 import org.elasticsearch.common.lease.Releasables;
@@ -58,12 +59,10 @@ import org.elasticsearch.common.lucene.Lucene;
 import org.elasticsearch.common.metrics.CounterMetric;
 import org.elasticsearch.common.metrics.MeanMetric;
 import org.elasticsearch.common.settings.Settings;
-import io.crate.common.unit.TimeValue;
 import org.elasticsearch.common.util.BigArrays;
 import org.elasticsearch.common.util.concurrent.AbstractRunnable;
 import org.elasticsearch.common.util.concurrent.AsyncIOProcessor;
 import org.elasticsearch.common.xcontent.XContentHelper;
-import io.crate.common.io.IOUtils;
 import org.elasticsearch.index.Index;
 import org.elasticsearch.index.IndexModule;
 import org.elasticsearch.index.IndexNotFoundException;
@@ -71,7 +70,6 @@ import org.elasticsearch.index.IndexService;
 import org.elasticsearch.index.IndexSettings;
 import org.elasticsearch.index.VersionType;
 import org.elasticsearch.index.cache.IndexCache;
-import org.elasticsearch.index.cache.bitset.ShardBitsetFilterCache;
 import org.elasticsearch.index.codec.CodecService;
 import org.elasticsearch.index.engine.CommitStats;
 import org.elasticsearch.index.engine.Engine;
@@ -112,6 +110,7 @@ import org.elasticsearch.repositories.Repository;
 import org.elasticsearch.rest.RestStatus;
 import org.elasticsearch.threadpool.ThreadPool;
 
+import javax.annotation.Nullable;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -144,11 +143,9 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
     private final MapperService mapperService;
     private final IndexCache indexCache;
     private final Store store;
-    private final ShardBitsetFilterCache shardBitsetFilterCache;
     private final Object mutex = new Object();
     private final String checkIndexOnStartup;
     private final CodecService codecService;
-    private final Engine.Warmer warmer;
     private final TranslogConfig translogConfig;
     private final IndexEventListener indexEventListener;
     private final QueryCachingPolicy cachingPolicy;
@@ -219,7 +216,6 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
             IndexSearcherWrapper indexSearcherWrapper,
             ThreadPool threadPool,
             BigArrays bigArrays,
-            Engine.Warmer warmer,
             List<IndexingOperationListener> listeners,
             Runnable globalCheckpointSyncer,
             CircuitBreakerService circuitBreakerService) throws IOException {
@@ -228,7 +224,6 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
         this.shardRouting = shardRouting;
         final Settings settings = indexSettings.getSettings();
         this.codecService = new CodecService(mapperService, logger);
-        this.warmer = warmer;
         Objects.requireNonNull(store, "Store must be provided to the index shard");
         this.engineFactory = Objects.requireNonNull(engineFactory);
         this.store = store;
@@ -238,7 +233,6 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
         this.indexCache = indexCache;
         this.indexingOperationListeners = new IndexingOperationListener.CompositeListener(listeners, logger);
         this.globalCheckpointSyncer = globalCheckpointSyncer;
-        this.shardBitsetFilterCache = new ShardBitsetFilterCache(shardId, indexSettings);
         state = IndexShardState.CREATED;
         this.path = path;
         this.circuitBreakerService = circuitBreakerService;
@@ -285,10 +279,6 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
 
     public Store store() {
         return this.store;
-    }
-
-    public ShardBitsetFilterCache shardBitsetFilterCache() {
-        return shardBitsetFilterCache;
     }
 
     public MapperService mapperService() {
@@ -2209,14 +2199,27 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
     }
 
     private EngineConfig newEngineConfig() {
-        return new EngineConfig(shardId, shardRouting.allocationId().getId(),
-            threadPool, indexSettings, warmer, store, indexSettings.getMergePolicy(),
-            mapperService.indexAnalyzer(), codecService, shardEventListener,
-            indexCache.query(), cachingPolicy, translogConfig,
+        return new EngineConfig(
+            shardId,
+            shardRouting.allocationId().getId(),
+            threadPool,
+            indexSettings,
+            store,
+            indexSettings.getMergePolicy(),
+            mapperService.indexAnalyzer(),
+            codecService,
+            shardEventListener,
+            indexCache.query(),
+            cachingPolicy,
+            translogConfig,
             IndexingMemoryController.SHARD_INACTIVE_TIME_SETTING.get(indexSettings.getSettings()),
             Collections.singletonList(refreshListeners),
             Collections.singletonList(new RefreshMetricUpdater(refreshMetric)),
-             circuitBreakerService, replicationTracker, () -> operationPrimaryTerm, tombstoneDocSupplier());
+            circuitBreakerService,
+            replicationTracker,
+            () -> operationPrimaryTerm,
+            tombstoneDocSupplier()
+        );
     }
 
     /**
@@ -2496,7 +2499,8 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
             indexSettings::getMaxRefreshListeners,
             () -> refresh("too_many_listeners"),
             threadPool.executor(ThreadPool.Names.LISTENER)::execute,
-            logger, threadPool.getThreadContext());
+            logger
+        );
     }
 
     /**

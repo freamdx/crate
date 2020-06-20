@@ -21,8 +21,8 @@
 
 package io.crate.expression.symbol;
 
-import com.google.common.collect.Lists;
 import io.crate.Streamer;
+import io.crate.common.collections.LazyMapList;
 import io.crate.expression.symbol.format.Style;
 import io.crate.metadata.ColumnIdent;
 import io.crate.metadata.GeneratedReference;
@@ -41,6 +41,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.function.Predicate;
 
+import static io.crate.expression.scalar.cast.CastFunctionResolver.CAST_FUNCTION_NAMES;
+
 public class Symbols {
 
     private static final HasColumnVisitor HAS_COLUMN_VISITOR = new HasColumnVisitor();
@@ -49,7 +51,7 @@ public class Symbols {
     public static final Predicate<Symbol> IS_GENERATED_COLUMN = input -> input instanceof GeneratedReference;
 
     public static List<DataType> typeView(List<? extends Symbol> symbols) {
-        return Lists.transform(symbols, Symbol::valueType);
+        return LazyMapList.of(symbols, Symbol::valueType);
     }
 
     public static Streamer<?>[] streamerArray(Collection<? extends Symbol> symbols) {
@@ -168,6 +170,14 @@ public class Symbols {
             }
         }
         return String.format(Locale.ENGLISH, messageTmpl, formattedSymbols);
+    }
+
+    public static Symbol unwrapReferenceFromCast(Symbol symbol) {
+        if (symbol instanceof Function
+            && CAST_FUNCTION_NAMES.contains(((Function) symbol).info().ident().name())) {
+            return ((Function) symbol).arguments().get(0);
+        }
+        return symbol;
     }
 
     private static class HasColumnVisitor extends SymbolVisitor<ColumnIdent, Boolean> {

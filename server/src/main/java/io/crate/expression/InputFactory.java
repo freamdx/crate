@@ -63,8 +63,8 @@ import java.util.Map;
  *
  * <p>
  *      Note:
- *      Symbols may either contain References OR InputColumn when using {@link #ctxForRefs(ReferenceResolver)} or
- *      {@link #ctxForInputColumns()}.
+ *      Symbols may either contain References OR InputColumn when using {@link #ctxForRefs(TransactionContext, ReferenceResolver)} or
+ *      {@link #ctxForInputColumns(TransactionContext)}.
  *
  *      This is due to the fact that References will result in a different kind of Expression class than InputColumns do.
  *      The expression class for references depends on the used ReferenceResolver.
@@ -200,23 +200,20 @@ public class InputFactory {
         }
 
         @Override
-        public Input<?> visitAggregation(Aggregation symbol, Void context) {
-            var ident = symbol.functionIdent();
-            var signature = symbol.signature();
-            FunctionImplementation impl;
-            if (signature == null) {
-                impl = functions.getQualified(ident);
-            } else {
-                impl = functions.getQualified(signature, ident.argumentTypes());
-            }
+        public Input<?> visitAggregation(Aggregation aggregation, Void context) {
+            FunctionImplementation impl = functions.getQualified(
+                aggregation,
+                txnCtx.sessionSettings().searchPath()
+            );
             assert impl != null : "Function implementation not found using full qualified lookup";
 
             //noinspection unchecked
-            Input<Boolean> filter = (Input<Boolean>) symbol.filter().accept(this, context);
-            AggregationContext aggregationContext = new AggregationContext((AggregationFunction) impl, filter);
-            for (Symbol aggInput : symbol.inputs()) {
-                aggregationContext.addInput(aggInput.accept(this, context));
+            Input<Boolean> filter = (Input<Boolean>) aggregation.filter().accept(this, context);
+            ArrayList<Input<?>> inputs = new ArrayList<>(aggregation.inputs().size());
+            for (Symbol aggInput : aggregation.inputs()) {
+                inputs.add(aggInput.accept(this, context));
             }
+            AggregationContext aggregationContext = new AggregationContext((AggregationFunction) impl, filter, inputs);
             aggregationContexts.add(aggregationContext);
 
             // can't generate an input from an aggregation.

@@ -41,6 +41,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.RandomAccess;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.util.Map.entry;
@@ -69,6 +70,8 @@ public final class DataTypes {
     public static final IntegerType INTEGER = IntegerType.INSTANCE;
     public static final LongType LONG = LongType.INSTANCE;
 
+    public static final TimeTZType TIMETZ = TimeTZType.INSTANCE;
+
     public static final TimestampType TIMESTAMPZ = TimestampType.INSTANCE_WITH_TZ;
     public static final TimestampType TIMESTAMP = TimestampType.INSTANCE_WITHOUT_TZ;
 
@@ -81,14 +84,18 @@ public final class DataTypes {
     public static final ArrayType<Integer> INTEGER_ARRAY = new ArrayType<>(INTEGER);
     public static final ArrayType<Short> SHORT_ARRAY = new ArrayType<>(SHORT);
     public static final ArrayType<Long> BIGINT_ARRAY = new ArrayType<>(LONG);
+    public static final ArrayType<Boolean> BOOLEAN_ARRAY = new ArrayType<>(BOOLEAN);
 
     public static final IntervalType INTERVAL = IntervalType.INSTANCE;
 
     public static final ObjectType UNTYPED_OBJECT = ObjectType.UNTYPED;
 
+    public static final RegprocType REGPROC = RegprocType.INSTANCE;
+
     public static Set<String> PRIMITIVE_TYPE_NAMES_WITH_SPACES = Set.of(
         TIMESTAMPZ.getName(),
         TIMESTAMP.getName(),
+        TIMETZ.getName(),
         DOUBLE.getName()
     );
 
@@ -107,8 +114,14 @@ public final class DataTypes {
         TIMESTAMP
     );
 
+    private static final Set<Integer> PRIMITIVE_TYPE_IDS =
+        PRIMITIVE_TYPES.stream()
+            .map(DataType::id)
+            .collect(toSet());
+
+
     public static final Set<DataType> STORAGE_UNSUPPORTED = Set.of(
-        INTERVAL
+        INTERVAL, TIMETZ
     );
 
     public static final List<DataType> NUMERIC_PRIMITIVE_TYPES = List.of(
@@ -120,6 +133,11 @@ public final class DataTypes {
         LONG
     );
 
+    private static final Set<Integer> NUMERIC_PRIMITIVE_TYPE_IDS =
+        NUMERIC_PRIMITIVE_TYPES.stream()
+            .map(DataType::id)
+            .collect(toSet());
+
     /**
      * Type registry mapping type ids to the according data type instance.
      */
@@ -129,13 +147,14 @@ public final class DataTypes {
             entry(NotSupportedType.ID, in -> NOT_SUPPORTED),
             entry(ByteType.ID, in -> BYTE),
             entry(BooleanType.ID, in -> BOOLEAN),
-            entry(StringType.ID, in -> STRING),
+            entry(StringType.ID, StringType::new),
             entry(IpType.ID, in -> IP),
             entry(DoubleType.ID, in -> DOUBLE),
             entry(FloatType.ID, in -> FLOAT),
             entry(ShortType.ID, in -> SHORT),
             entry(IntegerType.ID, in -> INTEGER),
             entry(LongType.ID, in -> LONG),
+            entry(TimeTZType.ID, in -> TIMETZ),
             entry(TimestampType.ID_WITH_TZ, in -> TIMESTAMPZ),
             entry(TimestampType.ID_WITHOUT_TZ, in -> TIMESTAMP),
             entry(ObjectType.ID, ObjectType::new),
@@ -144,8 +163,10 @@ public final class DataTypes {
             entry(GeoShapeType.ID, in -> GEO_SHAPE),
             entry(ArrayType.ID, ArrayType::new),
             entry(IntervalType.ID, in -> INTERVAL),
-            entry(RowType.ID, RowType::new))
-        );
+            entry(RowType.ID, RowType::new),
+            entry(RegprocType.ID, in -> REGPROC)
+        )
+    );
 
     private static final Set<Integer> NUMBER_CONVERSIONS = Stream.concat(
         Stream.of(BOOLEAN, STRING, TIMESTAMPZ, TIMESTAMP, IP),
@@ -157,13 +178,17 @@ public final class DataTypes {
     static final Map<Integer, Set<Integer>> ALLOWED_CONVERSIONS = Map.ofEntries(
         entry(BYTE.id(), NUMBER_CONVERSIONS),
         entry(SHORT.id(), NUMBER_CONVERSIONS),
-        entry(INTEGER.id(), NUMBER_CONVERSIONS),
+        entry(INTEGER.id(), Stream.concat(
+            NUMBER_CONVERSIONS.stream(),
+            Stream.of(RegprocType.ID))
+            .collect(Collectors.toUnmodifiableSet())),
+        entry(REGPROC.id(), Set.of(STRING.id(), INTEGER.id())),
         entry(LONG.id(), NUMBER_CONVERSIONS),
         entry(FLOAT.id(), NUMBER_CONVERSIONS),
         entry(DOUBLE.id(), NUMBER_CONVERSIONS),
         entry(BOOLEAN.id(), Set.of(STRING.id())),
         entry(STRING.id(), Stream.concat(
-            Stream.of(GEO_SHAPE.id(), GEO_POINT.id(), ObjectType.ID),
+            Stream.of(GEO_SHAPE.id(), GEO_POINT.id(), ObjectType.ID, RegprocType.ID, TimeTZType.ID),
             NUMBER_CONVERSIONS.stream()
         ).collect(toSet())),
         entry(IP.id(), Set.of(STRING.id())),
@@ -315,17 +340,18 @@ public final class DataTypes {
         entry(INTEGER.getName(), INTEGER),
         entry(LONG.getName(), LONG),
         entry(RowType.EMPTY.getName(), RowType.EMPTY),
+        entry(TIMETZ.getName(), TIMETZ),
         entry(TIMESTAMPZ.getName(), TIMESTAMPZ),
         entry(TIMESTAMP.getName(), TIMESTAMP),
         entry(ObjectType.NAME, UNTYPED_OBJECT),
         entry(GEO_POINT.getName(), GEO_POINT),
         entry(GEO_SHAPE.getName(), GEO_SHAPE),
+        entry(REGPROC.getName(), REGPROC),
         entry("int2", SHORT),
         entry("int", INTEGER),
         entry("int4", INTEGER),
         entry("int8", LONG),
         entry("name", STRING),
-        entry("regproc", STRING),
         entry("long", LONG),
         entry("byte", BYTE),
         entry("short", SHORT),
@@ -334,6 +360,7 @@ public final class DataTypes {
         entry("string", STRING),
         entry("varchar", STRING),
         entry("character varying", STRING),
+        entry("timetz", TIMETZ),
         entry("timestamptz", TIMESTAMPZ),
         // The usage of the `timestamp` data type as a data type with time
         // zone is deprecate, use `timestamp with time zone` or `timestamptz`
@@ -351,6 +378,22 @@ public final class DataTypes {
             throw new IllegalArgumentException("Cannot find data type: " + typeName);
         }
         return dataType;
+    }
+
+    public static DataType<?> of(String typeName, List<Integer> parameters) {
+        DataType<?> dataType = ofNameOrNull(typeName);
+        if (dataType == null) {
+            throw new IllegalArgumentException("Cannot find data type: " + typeName);
+        }
+        if (!parameters.isEmpty()) {
+            if (dataType.id() == StringType.ID) {
+                return StringType.of(parameters);
+            }
+            throw new IllegalArgumentException(
+                "The '" + typeName + "' type doesn't support type parameters.");
+        } else {
+            return dataType;
+        }
     }
 
     @Nullable
@@ -406,8 +449,20 @@ public final class DataTypes {
         return MAPPING_NAMES_TO_TYPES.get(name);
     }
 
-    public static boolean isPrimitive(DataType type) {
-        return PRIMITIVE_TYPES.contains(type);
+    /**
+     * Checks if the {@link DataType} is a primitive data type.
+     * The parameters of the data type are ignored.
+     */
+    public static boolean isPrimitive(DataType<?> type) {
+        return PRIMITIVE_TYPE_IDS.contains(type.id());
+    }
+
+    /**
+     * Checks if the {@link DataType} is a numeric primitive data type.
+     * The parameters of the data type are ignored.
+     */
+    public static boolean isNumericPrimitive(DataType<?> type) {
+        return NUMERIC_PRIMITIVE_TYPE_IDS.contains(type.id());
     }
 
     /**
@@ -433,26 +488,34 @@ public final class DataTypes {
         return streamer;
     }
 
-    public static boolean compareTypesById(DataType<?> left, DataType<?> right) {
+    /**
+     * Compares any two {@link DataType} by their IDs.
+     * The parameters of the data types, if they have any, are ignored.
+     */
+    public static boolean isSameType(DataType<?> left, DataType<?> right) {
         if (left.id() != right.id()) {
             return false;
         } else if (isArray(left)) {
-            return compareTypesById(
-                ((ArrayType) left).innerType(),
-                ((ArrayType) right).innerType());
+            return isSameType(
+                ((ArrayType<?>) left).innerType(),
+                ((ArrayType<?>) right).innerType());
         } else {
             return true;
         }
     }
 
-    public static boolean compareTypesById(List<DataType> left, List<DataType> right) {
+    /**
+     * Compares two {@link List<DataType>} by their IDs.
+     * The parameters of the data types, if they have any, are ignored.
+     */
+    public static boolean isSameType(List<DataType> left, List<DataType> right) {
         if (left.size() != right.size()) {
             return false;
         }
         assert left instanceof RandomAccess && right instanceof RandomAccess
             : "data type lists should support RandomAccess for fast lookups";
         for (int i = 0; i < left.size(); i++) {
-            if (!compareTypesById(left.get(i), right.get(i))) {
+            if (!isSameType(left.get(i), right.get(i))) {
                 return false;
             }
         }

@@ -21,7 +21,6 @@
 
 package io.crate.metadata.doc;
 
-import com.google.common.base.MoreObjects;
 import com.google.common.collect.ImmutableCollection;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -34,6 +33,7 @@ import io.crate.analyze.expressions.ExpressionAnalysisContext;
 import io.crate.analyze.expressions.ExpressionAnalyzer;
 import io.crate.analyze.expressions.TableReferenceResolver;
 import io.crate.analyze.relations.FieldProvider;
+import io.crate.common.Booleans;
 import io.crate.common.collections.Lists2;
 import io.crate.common.collections.Maps;
 import io.crate.expression.symbol.Symbol;
@@ -57,12 +57,13 @@ import io.crate.types.ArrayType;
 import io.crate.types.DataType;
 import io.crate.types.DataTypes;
 import io.crate.types.ObjectType;
+import io.crate.types.StringType;
 import org.elasticsearch.Version;
 import org.elasticsearch.cluster.metadata.IndexMetaData;
 import org.elasticsearch.cluster.metadata.MappingMetaData;
-import io.crate.common.Booleans;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.index.mapper.DateFieldMapper;
+import org.elasticsearch.index.mapper.KeywordFieldMapper;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -74,6 +75,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import static org.elasticsearch.index.mapper.TypeParsers.DOC_VALUES;
@@ -86,7 +88,7 @@ public class DocIndexMetaData {
     private final Map<ColumnIdent, IndexReference.Builder> indicesBuilder = new HashMap<>();
 
     private final Comparator<Reference> sortByPositionThenName = Comparator
-        .comparing((Reference r) -> MoreObjects.firstNonNull(r.position(), 0))
+        .comparing((Reference r) -> Objects.requireNonNullElse(r.position(), 0))
         .thenComparing(o -> o.column().fqn());
     private final ImmutableSortedSet.Builder<Reference> columnsBuilder = ImmutableSortedSet.orderedBy(sortByPositionThenName);
 
@@ -285,8 +287,8 @@ public class DocIndexMetaData {
      * @param columnProperties map of String to Object containing column properties
      * @return dataType of the column with columnProperties
      */
-    static DataType getColumnDataType(Map<String, Object> columnProperties) {
-        DataType type;
+    static DataType<?> getColumnDataType(Map<String, Object> columnProperties) {
+        DataType<?> type;
         String typeName = (String) columnProperties.get("type");
 
         if (typeName == null || ObjectType.NAME.equals(typeName)) {
@@ -298,24 +300,30 @@ public class DocIndexMetaData {
                 }
                 type = builder.build();
             } else {
-                type = MoreObjects.firstNonNull(DataTypes.ofMappingName(typeName), DataTypes.NOT_SUPPORTED);
+                type = Objects.requireNonNullElse(DataTypes.ofMappingName(typeName), DataTypes.NOT_SUPPORTED);
             }
         } else if (typeName.equalsIgnoreCase("array")) {
-
             Map<String, Object> innerProperties = Maps.get(columnProperties, "inner");
-            DataType innerType = getColumnDataType(innerProperties);
-            type = new ArrayType(innerType);
+            DataType<?> innerType = getColumnDataType(innerProperties);
+            type = new ArrayType<>(innerType);
         } else {
             typeName = typeName.toLowerCase(Locale.ENGLISH);
-            if (DateFieldMapper.CONTENT_TYPE.equals(typeName)) {
-                Boolean ignoreTimezone = (Boolean) columnProperties.get("ignore_timezone");
-                if (ignoreTimezone != null && ignoreTimezone) {
-                    return DataTypes.TIMESTAMP;
-                } else {
-                    return DataTypes.TIMESTAMPZ;
-                }
+            switch (typeName) {
+                case DateFieldMapper.CONTENT_TYPE:
+                    Boolean ignoreTimezone = (Boolean) columnProperties.get("ignore_timezone");
+                    if (ignoreTimezone != null && ignoreTimezone) {
+                        return DataTypes.TIMESTAMP;
+                    } else {
+                        return DataTypes.TIMESTAMPZ;
+                    }
+                case KeywordFieldMapper.CONTENT_TYPE:
+                    Integer lengthLimit = (Integer) columnProperties.get("length_limit");
+                    return lengthLimit != null
+                        ? StringType.of(lengthLimit)
+                        : DataTypes.STRING;
+                default:
+                    type = Objects.requireNonNullElse(DataTypes.ofMappingName(typeName), DataTypes.NOT_SUPPORTED);
             }
-            type = MoreObjects.firstNonNull(DataTypes.ofMappingName(typeName), DataTypes.NOT_SUPPORTED);
         }
         return type;
     }

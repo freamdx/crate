@@ -24,10 +24,9 @@ package io.crate.data.join;
 
 import io.crate.breaker.RamAccounting;
 import io.crate.breaker.RowAccounting;
-import io.crate.breaker.RowAccountingWithEstimators;
+import io.crate.breaker.RowCellsAccountingWithEstimators;
 import io.crate.data.BatchIterator;
 import io.crate.data.BatchIterators;
-import io.crate.data.CloseAssertingBatchIterator;
 import io.crate.data.InMemoryBatchIterator;
 import io.crate.data.Input;
 import io.crate.data.Row;
@@ -38,12 +37,11 @@ import io.crate.execution.engine.collect.InputCollectExpression;
 import io.crate.execution.engine.join.HashInnerJoinBatchIterator;
 import io.crate.execution.engine.window.WindowFunction;
 import io.crate.execution.engine.window.WindowFunctionBatchIterator;
-import io.crate.metadata.FunctionIdent;
 import io.crate.metadata.Functions;
+import io.crate.metadata.functions.Signature;
 import io.crate.module.EnterpriseFunctionsModule;
 import io.crate.testing.RowGenerator;
 import io.crate.types.DataTypes;
-import io.crate.window.NthValueFunctions;
 import org.elasticsearch.common.inject.ModulesBuilder;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -63,14 +61,17 @@ import java.util.stream.IntStream;
 import java.util.stream.StreamSupport;
 
 import static io.crate.data.SentinelRow.SENTINEL;
+import static io.crate.metadata.functions.TypeVariableConstraint.typeVariable;
+import static io.crate.types.TypeSignature.parseTypeSignature;
+import static io.crate.window.NthValueFunctions.LAST_VALUE_NAME;
 
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @State(Scope.Benchmark)
 public class RowsBatchIteratorBenchmark {
 
-    private final RowAccountingWithEstimators rowAccounting = new RowAccountingWithEstimators(
-        Collections.singleton(DataTypes.INTEGER), RamAccounting.NO_ACCOUNTING);
+    private final RowCellsAccountingWithEstimators rowAccounting = new RowCellsAccountingWithEstimators(
+        Collections.singleton(DataTypes.INTEGER), RamAccounting.NO_ACCOUNTING, 0);
 
     // use materialize to not have shared row instances
     // this is done in the startup, otherwise the allocation costs will make up the majority of the benchmark.
@@ -90,7 +91,13 @@ public class RowsBatchIteratorBenchmark {
         Functions functions = new ModulesBuilder().add(new EnterpriseFunctionsModule())
             .createInjector().getInstance(Functions.class);
         lastValueIntFunction = (WindowFunction) functions.getQualified(
-            new FunctionIdent(NthValueFunctions.LAST_VALUE_NAME, Collections.singletonList(DataTypes.INTEGER)));
+            Signature.window(
+                LAST_VALUE_NAME,
+                parseTypeSignature("E"),
+                parseTypeSignature("E")
+            ).withTypeVariableConstraints(typeVariable("E")),
+            List.of(DataTypes.INTEGER)
+        );
     }
 
     @Benchmark
@@ -98,15 +105,6 @@ public class RowsBatchIteratorBenchmark {
         BatchIterator<Row> it = new InMemoryBatchIterator<>(rows, SENTINEL, false);
         while (it.moveNext()) {
             blackhole.consume(it.currentElement().get(0));
-        }
-    }
-
-    @Benchmark
-    public void measureConsumeCloseAssertingIterator(Blackhole blackhole) {
-        BatchIterator<Row> it = new InMemoryBatchIterator<>(rows, SENTINEL, false);
-        BatchIterator<Row> itCloseAsserting = new CloseAssertingBatchIterator<>(it);
-        while (itCloseAsserting.moveNext()) {
-            blackhole.consume(itCloseAsserting.currentElement().get(0));
         }
     }
 
@@ -138,7 +136,7 @@ public class RowsBatchIteratorBenchmark {
             InMemoryBatchIterator.of(tenThousandRows, SENTINEL, true),
             new CombinedRow(1, 1),
             () -> 1000,
-            new NoRowAccounting()
+            new NoRowAccounting<>()
         );
         while (crossJoin.moveNext()) {
             blackhole.consume(crossJoin.currentElement().get(0));
@@ -202,7 +200,7 @@ public class RowsBatchIteratorBenchmark {
         InputCollectExpression input = new InputCollectExpression(0);
         BatchIterator<Row> batchIterator = WindowFunctionBatchIterator.of(
             new InMemoryBatchIterator<>(rows, SENTINEL, false),
-            new NoRowAccounting(),
+            new NoRowAccounting<>(),
             (partitionStart, partitionEnd, currentIndex, sortedRows) -> 0,
             (partitionStart, partitionEnd, currentIndex, sortedRows) -> currentIndex,
             (arg1, arg2) -> 0,
@@ -217,9 +215,10 @@ public class RowsBatchIteratorBenchmark {
         BatchIterators.collect(batchIterator, Collectors.summingInt(x -> { blackhole.consume(x); return 1; })).get();
     }
 
-    private static class NoRowAccounting implements RowAccounting<Row> {
+    private static class NoRowAccounting<T> implements RowAccounting<T> {
+
         @Override
-        public void accountForAndMaybeBreak(Row row) {
+        public void accountForAndMaybeBreak(T row) {
         }
 
         @Override

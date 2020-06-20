@@ -56,7 +56,6 @@ import org.apache.lucene.store.ByteBuffersDirectory;
 import org.elasticsearch.common.UUIDs;
 import org.elasticsearch.index.shard.ShardId;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.util.Arrays;
@@ -223,7 +222,7 @@ public class OrderedLuceneBatchIteratorFactoryTest extends CrateUnitTest {
     }
 
     private LuceneOrderedDocCollector createOrderedCollector(IndexSearcher searcher, int shardId) {
-        CollectorContext collectorContext = new CollectorContext(mappedFieldType -> null);
+        CollectorContext collectorContext = new CollectorContext();
         List<LuceneCollectorExpression<?>> expressions = Collections.singletonList(
             new OrderByCollectorExpression(reference, orderBy, o -> o));
         return new LuceneOrderedDocCollector(

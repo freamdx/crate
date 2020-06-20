@@ -22,9 +22,7 @@
 
 package io.crate.expression.symbol;
 
-import com.google.common.base.Preconditions;
 import io.crate.data.Input;
-import io.crate.exceptions.ConversionException;
 import io.crate.expression.symbol.format.Style;
 import io.crate.types.ArrayType;
 import io.crate.types.DataType;
@@ -58,7 +56,9 @@ public class Literal<T> extends Symbol implements Input<T>, Comparable<Literal<T
     public static final Literal<Map<String, Object>> EMPTY_OBJECT = Literal.of(Collections.emptyMap());
 
     public static Collection<Literal> explodeCollection(Literal collectionLiteral) {
-        Preconditions.checkArgument(DataTypes.isArray(collectionLiteral.valueType()));
+        if (!DataTypes.isArray(collectionLiteral.valueType())) {
+            throw new IllegalArgumentException("collectionLiteral must have have an array type");
+        }
         Iterable values;
         int size;
         Object literalValue = collectionLiteral.value();
@@ -137,36 +137,10 @@ public class Literal<T> extends Symbol implements Input<T>, Comparable<Literal<T
     }
 
     @Override
-    public Symbol cast(DataType<?> targetType, boolean tryCast) {
-        if (type.equals(targetType)) {
-            return this;
-        }
-        try {
-            //noinspection unchecked
-            return new Literal<>((DataType<Object>) targetType, targetType.value(value));
-        } catch (IllegalArgumentException | ClassCastException e) {
-            throw new ConversionException(this, targetType);
-        }
-    }
-
-    @Override
     public String toString(Style style) {
         StringBuilder sb = new StringBuilder();
         LiteralValueFormatter.format(value, sb);
         return sb.toString();
-    }
-
-    /**
-     * Literals always may be casted if required.
-     */
-    @Override
-    public boolean canBeCasted() {
-        return true;
-    }
-
-    @Override
-    public boolean isValueSymbol() {
-        return true;
     }
 
     @Override

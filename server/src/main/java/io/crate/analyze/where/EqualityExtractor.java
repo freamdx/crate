@@ -21,7 +21,6 @@
 
 package io.crate.analyze.where;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
 import io.crate.expression.eval.EvaluatingNormalizer;
 import io.crate.expression.operator.EqOperator;
@@ -41,6 +40,7 @@ import io.crate.metadata.FunctionIdent;
 import io.crate.metadata.FunctionInfo;
 import io.crate.metadata.Reference;
 import io.crate.metadata.TransactionContext;
+import io.crate.metadata.functions.Signature;
 import io.crate.types.ArrayType;
 import io.crate.types.DataType;
 import io.crate.types.DataTypes;
@@ -64,7 +64,11 @@ public class EqualityExtractor {
     private static final Function NULL_MARKER = new Function(
         new FunctionInfo(
             new FunctionIdent("null_marker", List.of()),
-            DataTypes.UNDEFINED), List.of());
+            DataTypes.UNDEFINED
+        ),
+        Signature.scalar("null_marker", DataTypes.UNDEFINED.getTypeSignature()),
+        List.of()
+    );
     private static final EqProxy NULL_MARKER_PROXY = new EqProxy(NULL_MARKER);
 
     private EvaluatingNormalizer normalizer;
@@ -176,19 +180,20 @@ public class EqualityExtractor {
 
         private void initProxies(Map<Function, EqProxy> existingProxies) {
             Symbol left = origin.arguments().get(0);
-            DataType leftType = origin.info().ident().argumentTypes().get(0);
-            DataType rightType = ((ArrayType) origin.info().ident().argumentTypes().get(1)).innerType();
+            DataType<?> leftType = origin.info().ident().argumentTypes().get(0);
+            DataType<?> rightType = ((ArrayType<?>) origin.info().ident().argumentTypes().get(1)).innerType();
             FunctionInfo eqInfo = new FunctionInfo(
                 new FunctionIdent(
                     EqOperator.NAME,
-                    ImmutableList.of(leftType, rightType)
+                    List.of(leftType, rightType)
                 ),
                 DataTypes.BOOLEAN
             );
-            Literal arrayLiteral = (Literal) origin.arguments().get(1);
+            Literal<?> arrayLiteral = (Literal<?>) origin.arguments().get(1);
+
             proxies = new HashMap<>();
-            for (Literal arrayElem : Literal.explodeCollection(arrayLiteral)) {
-                Function f = new Function(eqInfo, Arrays.asList(left, arrayElem));
+            for (Literal<?> arrayElem : Literal.explodeCollection(arrayLiteral)) {
+                Function f = new Function(eqInfo, EqOperator.SIGNATURE, Arrays.asList(left, arrayElem));
                 EqProxy existingProxy = existingProxies.get(f);
                 if (existingProxy == null) {
                     existingProxy = new ChildEqProxy(f, this);
@@ -342,7 +347,7 @@ public class EqualityExtractor {
             }
 
             public EqProxy add(Function compared) {
-                if (compared.info().ident().name().equals(AnyOperators.Names.EQ)) {
+                if (compared.info().ident().name().equals(AnyOperators.Type.EQ.opName())) {
                     AnyEqProxy anyEqProxy = new AnyEqProxy(compared, proxies);
                     for (EqProxy proxiedProxy : anyEqProxy) {
                         if (!proxies.containsKey(proxiedProxy.origin())) {
@@ -412,6 +417,7 @@ public class EqualityExtractor {
             Symbol firstArg = arguments.get(0);
 
             if (functionName.equals(EqOperator.NAME)) {
+                firstArg = Symbols.unwrapReferenceFromCast(firstArg);
                 if (firstArg instanceof Reference && SymbolVisitors.any(Symbols.IS_COLUMN, arguments.get(1)) == false) {
                     Comparison comparison = context.comparisons.get(
                         ((Reference) firstArg).column());
@@ -420,8 +426,9 @@ public class EqualityExtractor {
                         return comparison.add(function);
                     }
                 }
-            } else if (functionName.equals(AnyOperators.Names.EQ) && arguments.get(1).symbolType().isValueSymbol()) {
+            } else if (functionName.equals(AnyOperators.Type.EQ.opName()) && arguments.get(1).symbolType().isValueSymbol()) {
                 // ref = any ([1,2,3])
+                firstArg = Symbols.unwrapReferenceFromCast(firstArg);
                 if (firstArg instanceof Reference) {
                     Reference reference = (Reference) firstArg;
                     Comparison comparison = context.comparisons.get(reference.column());

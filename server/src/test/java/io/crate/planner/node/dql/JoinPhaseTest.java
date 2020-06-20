@@ -21,29 +21,30 @@
 
 package io.crate.planner.node.dql;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
 import io.crate.execution.dsl.phases.HashJoinPhase;
 import io.crate.execution.dsl.phases.MergePhase;
 import io.crate.execution.dsl.phases.NestedLoopPhase;
 import io.crate.execution.dsl.projection.TopNProjection;
 import io.crate.expression.operator.EqOperator;
+import io.crate.expression.symbol.Function;
 import io.crate.expression.symbol.InputColumn;
 import io.crate.expression.symbol.Literal;
 import io.crate.expression.symbol.Symbol;
+import io.crate.metadata.FunctionIdent;
+import io.crate.metadata.FunctionInfo;
 import io.crate.planner.distribution.DistributionInfo;
 import io.crate.planner.node.dql.join.JoinType;
 import io.crate.test.integration.CrateUnitTest;
 import io.crate.types.ArrayType;
-import io.crate.types.DataType;
 import io.crate.types.DataTypes;
 import org.elasticsearch.common.io.stream.BytesStreamOutput;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 
 import static org.hamcrest.CoreMatchers.is;
@@ -67,8 +68,8 @@ public class JoinPhaseTest extends CrateUnitTest {
             1,
             1,
             Collections.emptyList(),
-            ImmutableList.<DataType>of(DataTypes.STRING),
-            ImmutableList.of(),
+            List.of(DataTypes.STRING),
+            List.of(),
             DistributionInfo.DEFAULT_BROADCAST,
             null);
         mp2 = new MergePhase(
@@ -78,12 +79,21 @@ public class JoinPhaseTest extends CrateUnitTest {
             1,
             1,
             Collections.emptyList(),
-            ImmutableList.<DataType>of(DataTypes.STRING),
-            ImmutableList.of(),
+            List.of(DataTypes.STRING),
+            List.of(),
             DistributionInfo.DEFAULT_BROADCAST,
             null);
-        joinCondition = EqOperator.createFunction(
-            new InputColumn(0, DataTypes.STRING), new InputColumn(1, DataTypes.STRING));
+        joinCondition = new Function(
+            new FunctionInfo(
+                new FunctionIdent(EqOperator.NAME, List.of(DataTypes.STRING, DataTypes.STRING)),
+                DataTypes.BOOLEAN
+            ),
+            EqOperator.SIGNATURE,
+            List.of(
+                new InputColumn(0, DataTypes.STRING),
+                new InputColumn(1, DataTypes.STRING)
+            )
+        );
     }
 
     @Test
@@ -92,7 +102,7 @@ public class JoinPhaseTest extends CrateUnitTest {
             jobId,
             1,
             "nestedLoop",
-            ImmutableList.of(topNProjection),
+            List.of(topNProjection),
             mp1,
             mp2,
             2,
@@ -100,7 +110,7 @@ public class JoinPhaseTest extends CrateUnitTest {
             Sets.newHashSet("node1", "node2"),
             JoinType.FULL,
             joinCondition,
-            ImmutableList.of(DataTypes.LONG, DataTypes.STRING, new ArrayType(DataTypes.INTEGER)),
+            List.of(DataTypes.LONG, DataTypes.STRING, new ArrayType<>(DataTypes.INTEGER)),
             32L,
             100_000,
             true);
@@ -132,16 +142,16 @@ public class JoinPhaseTest extends CrateUnitTest {
             jobId,
             1,
             "nestedLoop",
-            ImmutableList.of(topNProjection),
+            List.of(topNProjection),
             mp1,
             mp2,
             2,
             3,
             Sets.newHashSet("node1", "node2"),
             joinCondition,
-            Arrays.asList(Literal.of("testLeft"), Literal.of(10)),
-            Arrays.asList(Literal.of("testRight"), Literal.of(20)),
-            Arrays.asList(DataTypes.STRING, DataTypes.INTEGER),
+            List.of(Literal.of("testLeft"), Literal.of(10)),
+            List.of(Literal.of("testRight"), Literal.of(20)),
+            List.of(DataTypes.STRING, DataTypes.INTEGER),
             111,
             222);
 

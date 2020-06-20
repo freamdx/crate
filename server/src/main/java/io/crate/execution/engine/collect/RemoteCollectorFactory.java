@@ -23,7 +23,7 @@
 package io.crate.execution.engine.collect;
 
 import com.carrotsearch.hppc.IntArrayList;
-import com.google.common.collect.Lists;
+import io.crate.common.collections.LazyMapList;
 import io.crate.data.BatchIterator;
 import io.crate.data.Buckets;
 import io.crate.data.CollectingBatchIterator;
@@ -69,7 +69,6 @@ public class RemoteCollectorFactory {
     private final ClusterService clusterService;
     private final TasksService tasksService;
     private final TransportActionProvider transportActionProvider;
-    private final ThreadPool threadPool;
     private final IndicesService indicesService;
     private final Executor searchTp;
 
@@ -83,7 +82,6 @@ public class RemoteCollectorFactory {
         this.tasksService = tasksService;
         this.transportActionProvider = transportActionProvider;
         this.indicesService = indicesService;
-        this.threadPool = threadPool;
         searchTp = threadPool.executor(ThreadPool.Names.SEARCH);
     }
 
@@ -97,7 +95,7 @@ public class RemoteCollectorFactory {
                                               RoutedCollectPhase collectPhase,
                                               CollectTask collectTask,
                                               ShardCollectorProviderFactory shardCollectorProviderFactory) {
-        ShardStateObserver shardStateObserver = new ShardStateObserver(clusterService, threadPool.getThreadContext());
+        ShardStateObserver shardStateObserver = new ShardStateObserver(clusterService);
         CompletableFuture<ShardRouting> shardBecameActive = shardStateObserver.waitForActiveShard(shardId);
         Runnable onClose = () -> {};
         Consumer<Throwable> kill = killReason -> {
@@ -149,7 +147,9 @@ public class RemoteCollectorFactory {
             );
             remoteCollector.doCollect();
         }
-        return consumer.completionFuture().thenApply(rows -> Lists.transform(rows, Buckets.arrayToSharedRow()::apply));
+        return consumer
+            .completionFuture()
+            .thenApply(rows -> LazyMapList.of(rows, Buckets.arrayToSharedRow()));
     }
 
     private static RoutedCollectPhase createRemoteCollectPhase(UUID childJobId,

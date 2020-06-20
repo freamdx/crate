@@ -221,6 +221,27 @@ Returns: ``int``
     +----+--------+
     SELECT 1 row in set (... sec)
 
+.. _scalar_chr:
+
+``chr(int)``
+------------
+
+Returns the character with the given code. For UTF-8 the argument is treated as
+a Unicode code point.
+
+Returns: ``string``
+
+::
+
+    cr> SELECT chr(65) AS a;
+    +---+
+    | a |
+    +---+
+    | A |
+    +---+
+    SELECT 1 row in set (... sec)
+
+
 ``lower('string')``
 -------------------
 
@@ -2690,11 +2711,11 @@ Example:
 ::
 
     cr> select pg_typeof([1, 2, 3]) as typeof;
-    +--------------+
-    | typeof       |
-    +--------------+
-    | bigint_array |
-    +--------------+
+    +---------------+
+    | typeof        |
+    +---------------+
+    | integer_array |
+    +---------------+
     SELECT 1 row in set (... sec)
 
 .. _version:
@@ -2745,6 +2766,42 @@ Example:
     +---------+
     |    NULL |
     +---------+
+    SELECT 1 row in set (... sec)
+
+
+.. _format_type:
+
+``format_type(integer, integer)``
+---------------------------------
+
+Returns the type name of a type. The first argument is the ``OID`` of the type.
+The second argument is the type modifier. This function exits for PostgreSQL
+compatibility and the type modifier is always ignored.
+
+Returns: ``text``
+
+Example:
+
+::
+
+    cr> SELECT pg_catalog.format_type(25, null) AS name;
+    +------+
+    | name |
+    +------+
+    | text |
+    +------+
+    SELECT 1 row in set (... sec)
+
+
+If the given ``OID`` is not know, ``???`` is returned::
+
+
+    cr> SELECT pg_catalog.format_type(3, null) AS name;
+    +------+
+    | name |
+    +------+
+    |  ??? |
+    +------+
     SELECT 1 row in set (... sec)
 
 

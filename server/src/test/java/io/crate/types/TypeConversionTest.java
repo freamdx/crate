@@ -21,73 +21,26 @@
 
 package io.crate.types;
 
-import io.crate.common.collections.Lists2;
-import io.crate.test.integration.CrateUnitTest;
-import org.junit.Test;
+import static org.hamcrest.core.Is.is;
 
 import java.util.Arrays;
-import java.util.Iterator;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.atomic.LongAdder;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
-import static org.hamcrest.core.Is.is;
+import org.junit.Test;
+
+import io.crate.common.collections.Lists2;
+import io.crate.test.integration.CrateUnitTest;
 
 public class TypeConversionTest extends CrateUnitTest {
 
-    private static class Repeater<T> implements Iterable<T>, Iterator<T> {
-
-        private final LongAdder repeated;
-        private final Callable<T> repeatMe;
-
-        public Repeater(Callable<T> repeatMe, long times) {
-            this.repeated = new LongAdder();
-            this.repeated.add(times);
-            this.repeatMe = repeatMe;
-        }
-
-        @Override
-        public Iterator<T> iterator() {
-            return this;
-        }
-
-        @Override
-        public boolean hasNext() {
-            return repeated.longValue() > 0;
-        }
-
-        @Override
-        public T next() {
-            repeated.decrement();
-            try {
-                return repeatMe.call();
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        @Override
-        public void remove() {
-            // ignore
-        }
-    }
-
     private Iterable<Byte> bytes(int num) {
-        return new Repeater<>(new Callable<Byte>() {
-            @Override
-            public Byte call() throws Exception {
-                return randomByte();
-            }
-        }, num);
+        return () -> Stream.generate(() -> randomByte()).limit(num).iterator();
     }
 
     private Iterable<Integer> integers(final int lower, final int upper, int num) {
-        return new Repeater<>(new Callable<Integer>() {
-            @Override
-            public Integer call() throws Exception {
-                return randomIntBetween(lower, upper);
-            }
-        }, num);
+        return () -> IntStream.generate(() -> randomIntBetween(lower, upper)).limit(num).iterator();
     }
 
     @Test
@@ -98,47 +51,47 @@ public class TypeConversionTest extends CrateUnitTest {
                 if (t.equals(DataTypes.IP)) {
                     byteVal = (byte) Math.abs(byteVal == Byte.MIN_VALUE ? byteVal >> 1 : byteVal);
                 }
-                t.value(byteVal);
+                t.implicitCast(byteVal);
             }
         }
 
-        for (Integer shortVal : integers((int) Byte.MIN_VALUE, (int) Byte.MAX_VALUE, 10)) {
+        for (Integer shortVal : integers(Byte.MIN_VALUE, Byte.MAX_VALUE, 10)) {
             for (int id : DataTypes.ALLOWED_CONVERSIONS.get(DataTypes.SHORT.id())) {
                 var t = DataTypes.fromId(id);
-                shortVal = t.equals(DataTypes.IP) ? Math.abs(shortVal) : shortVal;
-                t.value(shortVal.shortValue());
+                Integer val = t.equals(DataTypes.IP) ? Math.abs(shortVal) : shortVal;
+                t.implicitCast(val.shortValue());
             }
         }
 
-        for (Integer intValue : integers((int) Byte.MIN_VALUE, (int) Byte.MAX_VALUE, 10)) {
+        for (Integer intValue : integers(Byte.MIN_VALUE, Byte.MAX_VALUE, 10)) {
             for (int id : DataTypes.ALLOWED_CONVERSIONS.get(DataTypes.INTEGER.id())) {
                 var t = DataTypes.fromId(id);
-                intValue = t.equals(DataTypes.IP) ? Math.abs(intValue) : intValue;
-                t.value(intValue);
+                int val = t.equals(DataTypes.IP) ? Math.abs(intValue) : intValue;
+                t.implicitCast(val);
             }
         }
 
-        for (Integer longValue : integers((int) Byte.MIN_VALUE, (int) Byte.MAX_VALUE, 10)) {
+        for (Integer longValue : integers(Byte.MIN_VALUE, Byte.MAX_VALUE, 10)) {
             for (int id : DataTypes.ALLOWED_CONVERSIONS.get(DataTypes.LONG.id())) {
                 var t = DataTypes.fromId(id);
-                longValue = t.equals(DataTypes.IP) ? Math.abs(longValue) : longValue;
-                t.value(longValue.longValue());
+                Integer val = t.equals(DataTypes.IP) ? Math.abs(longValue) : longValue;
+                t.implicitCast(val.longValue());
             }
         }
 
-        for (Integer floatValue : integers((int) Byte.MIN_VALUE, (int) Byte.MAX_VALUE, 10)) {
+        for (Integer floatValue : integers(Byte.MIN_VALUE, Byte.MAX_VALUE, 10)) {
             for (int id : DataTypes.ALLOWED_CONVERSIONS.get(DataTypes.FLOAT.id())) {
                 var t = DataTypes.fromId(id);
-                floatValue = t.equals(DataTypes.IP) ? Math.abs(floatValue) : floatValue;
-                t.value(floatValue.floatValue());
+                Integer val = t.equals(DataTypes.IP) ? Math.abs(floatValue) : floatValue;
+                t.implicitCast(val.floatValue());
             }
         }
 
-        for (Integer doubleValue : integers((int) Byte.MIN_VALUE, (int) Byte.MAX_VALUE, 10)) {
+        for (Integer doubleValue : integers(Byte.MIN_VALUE, Byte.MAX_VALUE, 10)) {
             for (int id : DataTypes.ALLOWED_CONVERSIONS.get(DataTypes.DOUBLE.id())) {
                 var t = DataTypes.fromId(id);
-                doubleValue = t.equals(DataTypes.IP) ? Math.abs(doubleValue) : doubleValue;
-                t.value(doubleValue.doubleValue());
+                Integer val = t.equals(DataTypes.IP) ? Math.abs(doubleValue) : doubleValue;
+                t.implicitCast(val.doubleValue());
             }
         }
     }
@@ -195,12 +148,12 @@ public class TypeConversionTest extends CrateUnitTest {
             List.of(DataTypes.UNDEFINED, DataTypes.GEO_POINT, DataTypes.GEO_SHAPE, DataTypes.UNTYPED_OBJECT))) {
             assertThat(
                 "type '" + type + "' is not self convertible",
-                type.isConvertableTo(type), is(true));
+                type.isConvertableTo(type, false), is(true));
 
             ArrayType<?> arrayType = new ArrayType<>(type);
             assertThat(
                 "type '" +  arrayType + "' is not self convertible",
-                arrayType.isConvertableTo(arrayType), is(true));
+                arrayType.isConvertableTo(arrayType, false), is(true));
         }
     }
 
@@ -210,7 +163,7 @@ public class TypeConversionTest extends CrateUnitTest {
             DataTypes.PRIMITIVE_TYPES,
             Arrays.asList(DataTypes.GEO_POINT, DataTypes.GEO_SHAPE, DataTypes.UNTYPED_OBJECT))) {
 
-            assertFalse(DataTypes.NOT_SUPPORTED.isConvertableTo(type));
+            assertFalse(DataTypes.NOT_SUPPORTED.isConvertableTo(type, false));
         }
     }
 
@@ -219,31 +172,54 @@ public class TypeConversionTest extends CrateUnitTest {
         for (DataType<?> type : Lists2.concat(
             DataTypes.PRIMITIVE_TYPES,
             Arrays.asList(DataTypes.GEO_POINT, DataTypes.GEO_SHAPE, DataTypes.UNTYPED_OBJECT))) {
-            assertThat(type.isConvertableTo(DataTypes.UNDEFINED), is(false));
+            assertThat(type.isConvertableTo(DataTypes.UNDEFINED, false), is(false));
         }
-        assertThat(DataTypes.UNDEFINED.isConvertableTo(DataTypes.UNDEFINED), is(true));
+        assertThat(DataTypes.UNDEFINED.isConvertableTo(DataTypes.UNDEFINED, false), is(true));
     }
 
     @Test
     public void testGeoPointConversion() throws Exception {
-        assertThat(DataTypes.GEO_POINT.isConvertableTo(new ArrayType<>(DataTypes.DOUBLE)), is(true));
-        assertThat(DataTypes.STRING.isConvertableTo(DataTypes.GEO_POINT), is(true));
+        assertThat(DataTypes.GEO_POINT.isConvertableTo(new ArrayType<>(DataTypes.DOUBLE), false), is(true));
+        assertThat(DataTypes.STRING.isConvertableTo(DataTypes.GEO_POINT, false), is(true));
     }
 
     @Test
     public void testGeoShapeConversion() throws Exception {
-        DataType<?> objectType = DataTypes.UNTYPED_OBJECT;
-        assertThat(DataTypes.STRING.isConvertableTo(DataTypes.GEO_SHAPE), is(true));
-        assertThat(objectType.isConvertableTo(DataTypes.GEO_SHAPE), is(true));
+        assertThat(DataTypes.STRING.isConvertableTo(DataTypes.GEO_SHAPE, false), is(true));
+        assertThat(DataTypes.UNTYPED_OBJECT.isConvertableTo(DataTypes.GEO_SHAPE, false), is(true));
     }
 
     @Test
     public void testTimestampToDoubleConversion() {
-        assertThat(TimestampType.INSTANCE_WITH_TZ.isConvertableTo(DoubleType.INSTANCE),
+        assertThat(TimestampType.INSTANCE_WITH_TZ.isConvertableTo(DoubleType.INSTANCE, false),
             is(true));
-        assertThat(TimestampType.INSTANCE_WITHOUT_TZ.isConvertableTo(DoubleType.INSTANCE),
+        assertThat(TimestampType.INSTANCE_WITHOUT_TZ.isConvertableTo(DoubleType.INSTANCE, false),
             is(true));
 
+    }
+
+    @Test
+    public void test_time_to_double_conversion() {
+        assertThat(TimeTZType.INSTANCE.isConvertableTo(DoubleType.INSTANCE, false),
+                   is(false));
+        assertThat(DoubleType.INSTANCE.isConvertableTo(TimeTZType.INSTANCE, false),
+                   is(false));
+    }
+
+    @Test
+    public void test_time_to_long_conversion() {
+        assertThat(TimeTZType.INSTANCE.isConvertableTo(LongType.INSTANCE, false),
+                   is(false));
+        assertThat(LongType.INSTANCE.isConvertableTo(TimeTZType.INSTANCE, false),
+                   is(false));
+    }
+
+    @Test
+    public void test_time_to_string_conversion() {
+        assertThat(TimeTZType.INSTANCE.isConvertableTo(StringType.INSTANCE, false),
+                   is(false));
+        assertThat(StringType.INSTANCE.isConvertableTo(TimeTZType.INSTANCE, false),
+                   is(true));
     }
 
     @Test
@@ -251,8 +227,8 @@ public class TypeConversionTest extends CrateUnitTest {
         var objectTypeWithInner = ObjectType.builder().setInnerType("field", DataTypes.STRING).build();
         var objectTypeWithoutInner = DataTypes.UNTYPED_OBJECT;
 
-        assertThat(objectTypeWithInner.isConvertableTo(objectTypeWithoutInner), is(true));
-        assertThat(objectTypeWithoutInner.isConvertableTo(objectTypeWithInner), is(true));
+        assertThat(objectTypeWithInner.isConvertableTo(objectTypeWithoutInner, false), is(true));
+        assertThat(objectTypeWithoutInner.isConvertableTo(objectTypeWithInner, false), is(true));
     }
 
     @Test
@@ -260,7 +236,7 @@ public class TypeConversionTest extends CrateUnitTest {
         var thisObj = ObjectType.builder().setInnerType("field", DataTypes.GEO_POINT).build();
         var thatObj = ObjectType.builder().setInnerType("field", DataTypes.INTEGER).build();
 
-        assertThat(thisObj.isConvertableTo(thatObj), is(false));
+        assertThat(thisObj.isConvertableTo(thatObj, false), is(false));
     }
 
     @Test
@@ -268,6 +244,6 @@ public class TypeConversionTest extends CrateUnitTest {
         var thisObj = ObjectType.builder().setInnerType("field1", DataTypes.INTEGER).build();
         var thatObj = ObjectType.builder().setInnerType("field2", DataTypes.INTEGER).build();
 
-        assertThat(thisObj.isConvertableTo(thatObj), is(false));
+        assertThat(thisObj.isConvertableTo(thatObj, false), is(false));
     }
 }

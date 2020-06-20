@@ -21,7 +21,6 @@
 
 package io.crate.expression.scalar;
 
-import io.crate.action.sql.SessionContext;
 import io.crate.analyze.relations.AnalyzedRelation;
 import io.crate.analyze.relations.DocTableRelation;
 import io.crate.common.collections.Lists2;
@@ -34,6 +33,7 @@ import io.crate.expression.symbol.InputColumn;
 import io.crate.expression.symbol.Literal;
 import io.crate.expression.symbol.RefReplacer;
 import io.crate.expression.symbol.Symbol;
+import io.crate.expression.symbol.Symbols;
 import io.crate.metadata.CoordinatorTxnCtx;
 import io.crate.metadata.FunctionImplementation;
 import io.crate.metadata.Functions;
@@ -140,14 +140,10 @@ public abstract class AbstractScalarFunctionsTest extends CrateDummyClusterServi
             return;
         }
         Function function = (Function) functionSymbol;
-        var ident = function.info().ident();
-        var signature = function.signature();
-        FunctionImplementation impl;
-        if (signature == null) {
-            impl = functions.getQualified(ident);
-        } else {
-            impl = functions.getQualified(signature, ident.argumentTypes());
-        }
+        FunctionImplementation impl = functions.getQualified(
+            function.signature(),
+            Symbols.typeView(function.arguments())
+        );
         assertThat("Function implementation not found using full qualified lookup", impl, Matchers.notNullValue());
 
         Symbol normalized = sqlExpressions.normalize(function);
@@ -190,21 +186,17 @@ public abstract class AbstractScalarFunctionsTest extends CrateDummyClusterServi
             return;
         }
         LinkedList<Literal<?>> unusedLiterals = new LinkedList<>(Arrays.asList(literals));
-        Function function = (Function) RefReplacer.replaceRefs(functionSymbol, f -> {
+        Function function = (Function) RefReplacer.replaceRefs(functionSymbol, r -> {
             Literal<?> literal = unusedLiterals.pollFirst();
             if (literal == null) {
-                throw new IllegalArgumentException("No value literal for field=" + f + ", please add more literals");
+                throw new IllegalArgumentException("No value literal for reference=" + r + ", please add more literals");
             }
             return literal;
         });
-        var ident = function.info().ident();
-        var signature = function.signature();
-        Scalar scalar;
-        if (signature == null) {
-            scalar = (Scalar) functions.getQualified(ident);
-        } else {
-            scalar = (Scalar) functions.getQualified(signature, ident.argumentTypes());
-        }
+        Scalar scalar = (Scalar) functions.getQualified(
+            function.signature(),
+            Symbols.typeView(function.arguments())
+        );
         assertThat("Function implementation not found using full qualified lookup", scalar, Matchers.notNullValue());
 
         AssertMax1ValueCallInput[] arguments = new AssertMax1ValueCallInput[function.arguments().size()];
@@ -222,7 +214,7 @@ public abstract class AbstractScalarFunctionsTest extends CrateDummyClusterServi
             argument.calls = 0;
         }
 
-        actualValue = scalar.evaluate(txnCtx, (Input[]) arguments);
+        actualValue = scalar.evaluate(txnCtx, arguments);
         assertThat((T) actualValue, expectedValue);
     }
 
@@ -252,14 +244,10 @@ public abstract class AbstractScalarFunctionsTest extends CrateDummyClusterServi
         functionSymbol = sqlExpressions.normalize(functionSymbol);
         assertThat("function expression was normalized, compile would not be hit", functionSymbol, not(instanceOf(Literal.class)));
         Function function = (Function) functionSymbol;
-        var ident = function.info().ident();
-        var signature = function.signature();
-        Scalar scalar;
-        if (signature == null) {
-            scalar = (Scalar) functions.getQualified(ident);
-        } else {
-            scalar = (Scalar) functions.getQualified(signature, ident.argumentTypes());
-        }
+        Scalar scalar = (Scalar) functions.getQualified(
+            function.signature(),
+            Symbols.typeView(function.arguments())
+        );
         assertThat("Function implementation not found using full qualified lookup", scalar, Matchers.notNullValue());
 
         Scalar compiled = scalar.compile(function.arguments());
@@ -276,26 +264,13 @@ public abstract class AbstractScalarFunctionsTest extends CrateDummyClusterServi
         return true;
     }
 
-    @SuppressWarnings("unchecked")
     protected FunctionImplementation getFunction(String functionName, DataType... argTypes) {
         return getFunction(functionName, Arrays.asList(argTypes));
     }
 
-    @SuppressWarnings("unchecked")
     protected FunctionImplementation getFunction(String functionName, List<DataType> argTypes) {
         return functions.get(
             null, functionName, Lists2.map(argTypes, t -> new InputColumn(0, t)), SearchPath.pathWithPGCatalogAndDoc());
-    }
-
-    protected Symbol normalize(CoordinatorTxnCtx coordinatorTxnCtx, String functionName, Symbol... args) {
-        List<Symbol> argList = Arrays.asList(args);
-        FunctionImplementation function = functions.get(null, functionName, argList, SearchPath.pathWithPGCatalogAndDoc());
-        return function.normalizeSymbol(new Function(function.info(),
-            argList), coordinatorTxnCtx);
-    }
-
-    protected Symbol normalize(String functionName, Symbol... args) {
-        return normalize(new CoordinatorTxnCtx(SessionContext.systemSessionContext()), functionName, args);
     }
 
     private static class AssertMax1ValueCallInput implements Input {

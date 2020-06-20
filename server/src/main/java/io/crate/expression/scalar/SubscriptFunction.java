@@ -34,7 +34,6 @@ import io.crate.types.ArrayType;
 import io.crate.types.DataTypes;
 import io.crate.types.ObjectType;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -139,7 +138,6 @@ public class SubscriptFunction extends Scalar<Object, Object[]> {
         return info;
     }
 
-    @Nullable
     @Override
     public Signature signature() {
         return signature;
@@ -180,7 +178,7 @@ public class SubscriptFunction extends Scalar<Object, Object[]> {
 
     static Object lookupByNumericIndex(Object base, Object index) {
         List<?> values = (List<?>) base;
-        int idx = (Integer) index;
+        int idx = ((Number) index).intValue();
         try {
             return values.get(idx - 1); // SQL array indices start with 1
         } catch (IndexOutOfBoundsException e) {

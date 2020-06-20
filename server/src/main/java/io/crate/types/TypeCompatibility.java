@@ -73,8 +73,8 @@ public final class TypeCompatibility {
             lowerPrecedenceArg = arg1;
         }
 
-        final boolean lowerPrecedenceCastable = lowerPrecedenceArg.isConvertableTo(higherPrecedenceArg);
-        final boolean higherPrecedenceCastable = higherPrecedenceArg.isConvertableTo(lowerPrecedenceArg);
+        final boolean lowerPrecedenceCastable = lowerPrecedenceArg.isConvertableTo(higherPrecedenceArg, false);
+        final boolean higherPrecedenceCastable = higherPrecedenceArg.isConvertableTo(lowerPrecedenceArg, false);
 
         if (lowerPrecedenceCastable) {
             return higherPrecedenceArg;
@@ -92,6 +92,9 @@ public final class TypeCompatibility {
         List<DataType<?>> toTypeParameters = toType.getTypeParameters();
 
         if (fromTypeParameters.size() != toTypeParameters.size()) {
+            if (fromType.id() == ObjectType.ID && toType.id() == ObjectType.ID) {
+                return fromTypeParameters.size() > toTypeParameters.size() ? fromType : toType;
+            }
             return null;
         }
 

@@ -46,10 +46,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-
-import static com.google.common.base.MoreObjects.firstNonNull;
 
 /**
  * Used to analyze a query for primaryKey/partition "direct access" possibilities.
@@ -78,7 +77,7 @@ public final class WhereClauseOptimizer {
                       Set<Symbol> clusteredByValues) {
             this.query = query;
             this.docKeys = docKeys;
-            this.partitions = firstNonNull(partitionValues, Collections.emptyList());
+            this.partitions = Objects.requireNonNullElse(partitionValues, Collections.emptyList());
             this.clusteredByValues = clusteredByValues;
         }
 
@@ -144,11 +143,14 @@ public final class WhereClauseOptimizer {
     public static DetailedQuery optimize(EvaluatingNormalizer normalizer,
                                          Symbol query,
                                          DocTableInfo table,
-                                         TransactionContext txnCtx) {
+                                         TransactionContext txnCtx,
+                                         Functions functions) {
         Symbol queryGenColsProcessed = GeneratedColumnExpander.maybeExpand(
             query,
             table.generatedColumns(),
-            Lists2.concat(table.partitionedByColumns(), Lists2.map(table.primaryKey(), table::getReference)));
+            Lists2.concat(table.partitionedByColumns(), Lists2.map(table.primaryKey(), table::getReference)),
+            functions
+        );
         if (!query.equals(queryGenColsProcessed)) {
             query = normalizer.normalize(queryGenColsProcessed, txnCtx);
         }

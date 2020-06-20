@@ -21,12 +21,8 @@
 
 package io.crate.analyze;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.MoreObjects;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
 import io.crate.analyze.ddl.GeoSettingsApplier;
+import io.crate.common.annotations.VisibleForTesting;
 import io.crate.common.collections.Lists2;
 import io.crate.metadata.ColumnIdent;
 import io.crate.metadata.FulltextAnalyzerResolver;
@@ -60,13 +56,13 @@ public class AnalyzedColumnDefinition<T> {
     private static final DeprecationLogger DEPRECATION_LOGGER =
         new DeprecationLogger(LogManager.getLogger(AnalyzedColumnDefinition.class));
 
-    private static final Set<Integer> UNSUPPORTED_PK_TYPE_IDS = Sets.newHashSet(
+    private static final Set<Integer> UNSUPPORTED_PK_TYPE_IDS = Set.of(
         ObjectType.ID,
         DataTypes.GEO_POINT.id(),
         DataTypes.GEO_SHAPE.id()
     );
 
-    private static final Set<Integer> UNSUPPORTED_INDEX_TYPE_IDS = Sets.newHashSet(
+    private static final Set<Integer> UNSUPPORTED_INDEX_TYPE_IDS = Set.of(
         ObjectType.ID,
         DataTypes.GEO_POINT.id(),
         DataTypes.GEO_SHAPE.id()
@@ -242,18 +238,18 @@ public class AnalyzedColumnDefinition<T> {
     }
 
     public void dataType(String dataType) {
-        dataType(dataType, true);
+        dataType(dataType, List.of(), true);
     }
 
-    public void dataType(String dataType, boolean logWarnings) {
-        if ("timestamp".equals(dataType) && logWarnings) {
+    public void dataType(String typeName, List<Integer> parameters, boolean logWarnings) {
+        if ("timestamp".equals(typeName) && logWarnings) {
             DEPRECATION_LOGGER.deprecated(
                 "Column [{}]: Usage of the `TIMESTAMP` data type as a timestamp with zone " +
                 "is deprecated, use the `TIMESTAMPTZ` or `TIMESTAMP WITH TIME ZONE` data type instead.",
                 ident.fqn()
             );
         }
-        this.dataType = DataTypes.ofName(dataType);
+        this.dataType = DataTypes.of(typeName, parameters);
     }
 
     public DataType dataType() {
@@ -308,10 +304,10 @@ public class AnalyzedColumnDefinition<T> {
         Settings storageSettings = GenericPropertiesConverter.genericPropertiesToSettings(definition.storageProperties);
         for (String property : storageSettings.names()) {
             if (property.equals(COLUMN_STORE_PROPERTY)) {
-                DataType dataType = definition.dataType();
+                DataType<?> dataType = definition.dataType();
                 boolean val = storageSettings.getAsBoolean(property, true);
                 if (val == false) {
-                    if (dataType != DataTypes.STRING) {
+                    if (!DataTypes.isSameType(dataType, DataTypes.STRING)) {
                         throw new IllegalArgumentException(
                             String.format(Locale.ENGLISH, "Invalid storage option \"columnstore\" for data type \"%s\"",
                                           dataType.getName()));
@@ -355,10 +351,12 @@ public class AnalyzedColumnDefinition<T> {
 
     public void validate() {
         if (indexType == Reference.IndexType.ANALYZED && !DataTypes.STRING.equals(dataType)) {
-            throw new IllegalArgumentException(
-                String.format(Locale.ENGLISH, "Can't use an Analyzer on column %s because analyzers are only allowed on columns of type \"string\".",
-                              ident.sqlFqn()
-                ));
+            throw new IllegalArgumentException(String.format(
+                Locale.ENGLISH,
+                "Can't use an Analyzer on column %s because analyzers are only allowed on " +
+                "columns of type \"" + DataTypes.STRING.getName() + "\" of the unbound length limit.",
+                ident.sqlFqn()
+            ));
         }
         if (indexType != null && UNSUPPORTED_INDEX_TYPE_IDS.contains(dataType.id())) {
             throw new IllegalArgumentException(String.format(Locale.ENGLISH,
@@ -461,8 +459,11 @@ public class AnalyzedColumnDefinition<T> {
                 if (definition.analyzer != null) {
                     mapping.put("analyzer", DataTypes.STRING.value(definition.analyzer));
                 }
+                var stringType = (StringType) definition.dataType;
+                if (!stringType.unbound()) {
+                    mapping.put("length_limit", stringType.lengthLimit());
+                }
                 break;
-
             default:
                 // noop
                 break;
@@ -499,7 +500,7 @@ public class AnalyzedColumnDefinition<T> {
     }
 
     Map<String, Object> toMetaIndicesMapping() {
-        return ImmutableMap.of();
+        return Map.of();
     }
 
     @Override
@@ -519,7 +520,9 @@ public class AnalyzedColumnDefinition<T> {
 
     @Override
     public String toString() {
-        return MoreObjects.toStringHelper(this).add("ident", ident).toString();
+        return "AnalyzedColumnDefinition{" +
+               "ident=" + ident +
+               '}';
     }
 
     public List<AnalyzedColumnDefinition<T>> children() {
@@ -527,7 +530,7 @@ public class AnalyzedColumnDefinition<T> {
     }
 
     void addCopyTo(Set<String> targets) {
-        this.copyToTargets = Lists.newArrayList(targets);
+        this.copyToTargets = new ArrayList<>(targets);
     }
 
     public void ident(ColumnIdent ident) {

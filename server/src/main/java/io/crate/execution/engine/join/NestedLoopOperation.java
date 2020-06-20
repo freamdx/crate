@@ -21,9 +21,9 @@
 
 package io.crate.execution.engine.join;
 
-import com.google.common.annotations.VisibleForTesting;
 import io.crate.breaker.RamAccounting;
-import io.crate.breaker.RowAccountingWithEstimators;
+import io.crate.breaker.RowCellsAccountingWithEstimators;
+import io.crate.common.annotations.VisibleForTesting;
 import io.crate.concurrent.CompletionListenable;
 import io.crate.data.BatchIterator;
 import io.crate.data.CapturingRowConsumer;
@@ -163,7 +163,7 @@ public class NestedLoopOperation implements CompletionListenable {
                 estimatedRowsSizeLeft,
                 estimatedNumberOfRowsLeft
             );
-            RowAccountingWithEstimators rowAccounting = new RowAccountingWithEstimators(leftSideColumnTypes, ramAccounting);
+            var rowAccounting = new RowCellsAccountingWithEstimators(leftSideColumnTypes, ramAccounting, 0);
             return JoinBatchIterators.crossJoinBlockNL(left, right, combiner, blockSizeCalculator, rowAccounting);
         } else {
             return JoinBatchIterators.crossJoinNL(left, right, combiner);

@@ -21,26 +21,6 @@
 
 package io.crate.udc.ping;
 
-import io.crate.http.HttpTestServer;
-import io.crate.license.LicenseData;
-import io.crate.license.LicenseService;
-import io.crate.monitor.ExtendedNetworkInfo;
-import io.crate.monitor.ExtendedNodeInfo;
-import io.crate.monitor.ExtendedOsInfo;
-import io.crate.monitor.SysInfo;
-import io.crate.test.integration.CrateDummyClusterServiceUnitTest;
-import io.crate.types.DataTypes;
-
-import org.elasticsearch.common.settings.Settings;
-import org.hamcrest.Matchers;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
-
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasKey;
 import static org.hamcrest.Matchers.not;
@@ -48,6 +28,22 @@ import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.core.Is.is;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+
+import org.hamcrest.Matchers;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+
+import io.crate.http.HttpTestServer;
+import io.crate.license.LicenseData;
+import io.crate.license.LicenseService;
+import io.crate.monitor.ExtendedNetworkInfo;
+import io.crate.monitor.ExtendedNodeInfo;
+import io.crate.test.integration.CrateDummyClusterServiceUnitTest;
+import io.crate.types.DataTypes;
 
 public class PingTaskTest extends CrateDummyClusterServiceUnitTest {
 
@@ -62,18 +58,17 @@ public class PingTaskTest extends CrateDummyClusterServiceUnitTest {
 
     private HttpTestServer testServer;
 
-    private PingTask createPingTask(String pingUrl, Settings settings) {
+    private PingTask createPingTask(String pingUrl) {
         return new PingTask(
             clusterService,
             extendedNodeInfo,
             pingUrl,
-            settings,
             licenseService
         );
     }
 
     private PingTask createPingTask() {
-        return createPingTask("http://dummy", Settings.EMPTY);
+        return createPingTask("http://dummy");
     }
 
     @After
@@ -87,7 +82,6 @@ public class PingTaskTest extends CrateDummyClusterServiceUnitTest {
     public void prepare() throws Exception {
         extendedNodeInfo = mock(ExtendedNodeInfo.class);
         when(extendedNodeInfo.networkInfo()).thenReturn(new ExtendedNetworkInfo(ExtendedNetworkInfo.NA_INTERFACE));
-        when(extendedNodeInfo.osInfo()).thenReturn(new ExtendedOsInfo(SysInfo.gather()));
         licenseService = mock(LicenseService.class);
     }
 
@@ -104,7 +98,7 @@ public class PingTaskTest extends CrateDummyClusterServiceUnitTest {
         testServer = new HttpTestServer(18080, false);
         testServer.run();
 
-        PingTask task = createPingTask("http://localhost:18080/", Settings.EMPTY);
+        PingTask task = createPingTask("http://localhost:18080/");
         task.run();
         assertThat(testServer.responses.size(), is(1));
         task.run();
@@ -152,7 +146,7 @@ public class PingTaskTest extends CrateDummyClusterServiceUnitTest {
         testServer = new HttpTestServer(18080, false);
         testServer.run();
 
-        PingTask task = createPingTask("http://localhost:18080/", Settings.EMPTY);
+        PingTask task = createPingTask("http://localhost:18080/");
         task.run();
         assertThat(testServer.responses.size(), is(1));
         String json = testServer.responses.get(0);
@@ -171,7 +165,7 @@ public class PingTaskTest extends CrateDummyClusterServiceUnitTest {
 
         testServer = new HttpTestServer(18081, true);
         testServer.run();
-        PingTask task = createPingTask("http://localhost:18081/", Settings.EMPTY);
+        PingTask task = createPingTask("http://localhost:18081/");
         task.run();
         assertThat(testServer.responses.size(), is(1));
         task.run();

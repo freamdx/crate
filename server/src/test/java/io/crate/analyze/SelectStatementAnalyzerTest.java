@@ -42,6 +42,8 @@ import io.crate.expression.predicate.IsNullPredicate;
 import io.crate.expression.predicate.NotPredicate;
 import io.crate.expression.scalar.SubscriptFunction;
 import io.crate.expression.scalar.arithmetic.ArithmeticFunctions;
+import io.crate.expression.scalar.cast.ExplicitCastFunction;
+import io.crate.expression.scalar.cast.TryCastFunction;
 import io.crate.expression.scalar.geo.DistanceFunction;
 import io.crate.expression.symbol.AliasSymbol;
 import io.crate.expression.symbol.Function;
@@ -55,19 +57,20 @@ import io.crate.expression.symbol.Symbols;
 import io.crate.metadata.FunctionInfo;
 import io.crate.metadata.RelationName;
 import io.crate.metadata.sys.SysNodesTableInfo;
-import io.crate.planner.Merge;
 import io.crate.sql.parser.ParsingException;
 import io.crate.test.integration.CrateDummyClusterServiceUnitTest;
 import io.crate.testing.SQLExecutor;
 import io.crate.types.ArrayType;
 import io.crate.types.DataType;
 import io.crate.types.DataTypes;
+import io.crate.types.TimeTZ;
 import org.hamcrest.Matchers;
 import org.hamcrest.core.IsInstanceOf;
 import org.junit.Before;
 import org.junit.Test;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -157,7 +160,7 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
         QueriedSelectRelation relation =  analyze("select * from sys.nodes where port['http'] = -400");
         Function whereClause = (Function) relation.where();
         Symbol symbol = whereClause.arguments().get(1);
-        assertThat(((Literal) symbol).value(), is(-400));
+        assertThat(((Literal<?>) symbol).value(), is(-400));
     }
 
     @Test
@@ -429,7 +432,7 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
     public void testWhereInSelect() throws Exception {
         QueriedSelectRelation relation = analyze("select load from sys.nodes where load['1'] in (1.0, 2.0, 4.0, 8.0, 16.0)");
         Function whereClause = (Function) relation.where();
-        assertThat(whereClause.info().ident().name(), is(AnyOperators.Names.EQ));
+        assertThat(whereClause.info().ident().name(), is(AnyOperators.Type.EQ.opName()));
     }
 
     @Test
@@ -456,7 +459,7 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
     @Test
     public void testWhereInSelectDifferentDataTypeValueIncompatibleDataTypes() throws Exception {
         expectedException.expect(ConversionException.class);
-        expectedException.expectMessage("Cannot cast `'foo'` of type `text` to type `bigint`");
+        expectedException.expectMessage("Cannot cast `'foo'` of type `text` to type `integer`");
         analyze("select 'found' from users where 1 in (1, 'foo', 2)");
     }
 
@@ -483,7 +486,7 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
     public void testSelectDistinctWithFunction() {
         QueriedSelectRelation relation = analyze("select distinct id + 1 from users");
         assertThat(relation.isDistinct(), is(true));
-        assertThat(relation.outputs(), isSQL("(doc.users.id + 1)"));
+        assertThat(relation.outputs(), isSQL("(doc.users.id + 1::bigint)"));
     }
 
     @Test
@@ -800,8 +803,8 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
 
     @Test
     public void testArrayCompareInvalidArray() throws Exception {
-        expectedException.expect(ConversionException.class);
-        expectedException.expectMessage("Cannot cast `name` of type `text` to type `undefined_array`");
+        expectedException.expect(UnsupportedOperationException.class);
+        expectedException.expectMessage("unknown function: any_=(text, text)");
         analyze("select * from users where 'George' = ANY (name)");
     }
 
@@ -843,8 +846,8 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
         // users.friends is an object array,
         // so its fields are selected as arrays,
         // ergo simple comparison does not work here
-        expectedException.expect(IllegalArgumentException.class);
-        expectedException.expectMessage("Cannot cast `friends['id']` of type `bigint_array` to type `bigint`");
+        expectedException.expect(UnsupportedOperationException.class);
+        expectedException.expectMessage("unknown function: op_=(bigint_array, integer)");
         analyze("select * from users where 5 = friends['id']");
     }
 
@@ -853,7 +856,7 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
         QueriedSelectRelation relation = analyze(
             "select * from users where 5 = ANY (friends['id'])");
         Function anyFunction = (Function) relation.where();
-        assertThat(anyFunction.info().ident().name(), is(AnyOperators.Names.EQ));
+        assertThat(anyFunction.info().ident().name(), is(AnyOperators.Type.EQ.opName()));
         assertThat(anyFunction.arguments().get(1), isReference("friends['id']", new ArrayType<>(DataTypes.LONG)));
         assertThat(anyFunction.arguments().get(0), isLiteral(5L));
     }
@@ -933,15 +936,15 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
     public void testPrefixedNumericLiterals() throws Exception {
         AnalyzedRelation relation = analyze("select - - - 10");
         List<Symbol> outputs = relation.outputs();
-        assertThat(outputs.get(0), is(Literal.of(-10L)));
+        assertThat(outputs.get(0), is(Literal.of(-10)));
 
         relation = analyze("select - + - 10");
         outputs = relation.outputs();
-        assertThat(outputs.get(0), is(Literal.of(10L)));
+        assertThat(outputs.get(0), is(Literal.of(10)));
 
         relation = analyze("select - (- 10 - + 10) * - (+ 10 + - 10)");
         outputs = relation.outputs();
-        assertThat(outputs.get(0), is(Literal.of(0L)));
+        assertThat(outputs.get(0), is(Literal.of(0)));
     }
 
     @Test
@@ -981,8 +984,8 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
 
     @Test
     public void testAnyLikeInvalidArray() throws Exception {
-        expectedException.expect(ConversionException.class);
-        expectedException.expectMessage("Cannot cast `name` of type `text` to type `undefined_array`");
+        expectedException.expect(UnsupportedOperationException.class);
+        expectedException.expectMessage("any_like(text, text)");
         analyze("select * from users where 'awesome' LIKE ANY (name)");
     }
 
@@ -1093,7 +1096,7 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
     @Test
     public void testMatchPredicateWithWrongQueryTerm() {
         expectedException.expect(IllegalArgumentException.class);
-        expectedException.expectMessage("Cannot cast `[10, 20]` of type `bigint_array` to type `text`");
+        expectedException.expectMessage("Cannot cast expressions from type `integer_array` to type `text`");
         analyze("select name from users order by match(name, [10, 20])");
     }
 
@@ -1189,15 +1192,15 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
         assertThat(match.options(), isLiteral(Map.ofEntries(
             Map.entry("analyzer", "german"),
             Map.entry("boost", 4.6),
-            Map.entry("cutoff_frequency", 5L),
-            Map.entry("fuzziness", 12L),
+            Map.entry("cutoff_frequency", 5),
+            Map.entry("fuzziness", 12),
             Map.entry("fuzzy_rewrite", "top_terms_20"),
-            Map.entry("max_expansions", 3L),
-            Map.entry("minimum_should_match", 4L),
+            Map.entry("max_expansions", 3),
+            Map.entry("minimum_should_match", 4),
             Map.entry("operator", "or"),
-            Map.entry("prefix_length", 4L),
+            Map.entry("prefix_length", 4),
             Map.entry("rewrite", "constant_score_boolean"),
-            Map.entry("slop", 3L),
+            Map.entry("slop", 3),
             Map.entry("tie_breaker", 0.75),
             Map.entry("zero_terms_query", "all")
         )));
@@ -1216,7 +1219,7 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
         Function havingFunction = (Function) relation.having();
 
         // assert that the in was converted to or
-        assertThat(havingFunction.info().ident().name(), is(AnyOperators.Names.EQ));
+        assertThat(havingFunction.info().ident().name(), is(AnyOperators.Type.EQ.opName()));
     }
 
     @Test
@@ -1272,9 +1275,16 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
 
     @Test
     public void testRegexpMatchInvalidArg() {
-        expectedException.expect(IllegalArgumentException.class);
-        expectedException.expectMessage("Cannot cast `floats` of type `real` to type `text`");
+        expectedException.expect(UnsupportedOperationException.class);
+        expectedException.expectMessage("unknown function: op_~(real, text)");
         analyze("select * from users where floats ~ 'foo'");
+    }
+
+    @Test
+    public void testRegexpMatchCaseInsensitiveInvalidArg() {
+        expectedException.expect(UnsupportedOperationException.class);
+        expectedException.expectMessage("unknown function: op_~*(real, text)");
+        analyze("select * from users where floats ~* 'foo'");
     }
 
     @Test
@@ -1396,8 +1406,13 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
     @Test
     public void testCastExpression() {
         AnalyzedRelation relation = analyze("select cast(other_id as text) from users");
-        assertThat(relation.outputs().get(0),
-            isFunction("to_text", List.of(DataTypes.LONG, DataTypes.UNDEFINED)));
+        assertThat(
+            relation.outputs().get(0),
+            isFunction(
+                ExplicitCastFunction.NAME,
+                List.of(DataTypes.LONG, DataTypes.STRING)
+            )
+        );
 
         relation = analyze("select cast(1+1 as string) from users");
         assertThat(relation.outputs().get(0), isLiteral("2", DataTypes.STRING));
@@ -1406,15 +1421,22 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
         assertThat(
             relation.outputs().get(0),
             isFunction(
-                "to_text_array",
-                List.of(new ArrayType<>(DataTypes.LONG), DataTypes.UNDEFINED)));
+                ExplicitCastFunction.NAME,
+                List.of(DataTypes.BIGINT_ARRAY, DataTypes.STRING_ARRAY)
+            )
+        );
     }
 
     @Test
     public void testTryCastExpression() {
         AnalyzedRelation relation = analyze("select try_cast(other_id as text) from users");
-        assertThat(relation.outputs().get(0), isFunction(
-            "try_to_text", List.of(DataTypes.LONG, DataTypes.UNDEFINED)));
+        assertThat(
+            relation.outputs().get(0),
+            isFunction(
+                TryCastFunction.NAME,
+                List.of(DataTypes.LONG, DataTypes.STRING)
+            )
+        );
 
         relation = analyze("select try_cast(1+1 as string) from users");
         assertThat(relation.outputs().get(0), isLiteral("2", DataTypes.STRING));
@@ -1426,8 +1448,10 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
         assertThat(
             relation.outputs().get(0),
             isFunction(
-                "try_to_boolean_array",
-                List.of(new ArrayType<>(DataTypes.LONG), DataTypes.UNDEFINED)));
+                TryCastFunction.NAME,
+                List.of(DataTypes.BIGINT_ARRAY, DataTypes.BOOLEAN_ARRAY)
+            )
+        );
     }
 
     @Test
@@ -1436,7 +1460,7 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
         assertThat(relation.outputs().get(0), isLiteral(null));
 
         relation = analyze("select try_cast(['fd', '3', '5'] as array(integer)) from users");
-        assertThat(relation.outputs().get(0), isLiteral(null));
+        assertThat(relation.outputs().get(0), isLiteral(Arrays.asList(null, 3, 5)));
 
         relation = analyze("select try_cast('1' as boolean) from users");
         assertThat(relation.outputs().get(0), isLiteral(null));
@@ -1511,7 +1535,13 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
         assertThat(symbol, isFunction("extract_DAY_OF_MONTH"));
 
         Symbol argument = ((Function) symbol).arguments().get(0);
-        assertThat(argument, isFunction("to_timestamp with time zone"));
+        assertThat(
+            argument,
+            isFunction(
+                ExplicitCastFunction.NAME,
+                List.of(DataTypes.STRING, DataTypes.TIMESTAMPZ)
+            )
+        );
     }
 
     @Test
@@ -1623,7 +1653,6 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
         AnalyzedRelation relation = analyze("select sys.jobs.* from sys.jobs");
         List<Symbol> outputs = relation.outputs();
         assertThat(outputs.size(), is(5));
-        //noinspection unchecked
         assertThat(outputs, Matchers.contains(isReference("id"),
             isReference("node"),
             isReference("started"),
@@ -1691,7 +1720,7 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
     @Test
     public void testSelectStarFromUnnestWithInvalidArguments() throws Exception {
         expectedException.expect(UnsupportedOperationException.class);
-        expectedException.expectMessage("unknown function: unnest(bigint, text)");
+        expectedException.expectMessage("unknown function: unnest(integer, text)");
         analyze("select * from unnest(1, 'foo')");
     }
 
@@ -1711,7 +1740,7 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
             "order by 2, 3");
         assertThat(relation.having(), notNullValue());
         assertThat(relation.having(),
-            isSQL("(NOT (collect_set(sys.shards.recovery['size']['percent']) = [100.0]))"));
+            isSQL("(NOT (_cast(collect_set(sys.shards.recovery['size']['percent']), 'array(double precision)') = [100.0]))"));
     }
 
     @Test
@@ -1825,7 +1854,7 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
     public void testColumnOutputWithSingleRowSubselect() {
         AnalyzedRelation relation = analyze("select 1 = \n (select \n 2\n)\n");
         assertThat(relation.outputs(), contains(
-            isFunction("op_=", isLiteral(1L), instanceOf(SelectSymbol.class)))
+            isFunction("op_=", isLiteral(1), instanceOf(SelectSymbol.class)))
         );
     }
 
@@ -1874,7 +1903,7 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
     @Test
     public void testCastToNestedArrayCanBeUsed() {
         AnalyzedRelation relation = analyze("select [[1, 2, 3]]::array(array(int))");
-        assertThat(relation.outputs().get(0).valueType(), is(new ArrayType(new ArrayType(DataTypes.INTEGER))));
+        assertThat(relation.outputs().get(0).valueType(), is(new ArrayType<>(DataTypes.INTEGER_ARRAY)));
     }
 
     @Test
@@ -1887,6 +1916,17 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
     public void testCastTimestampWithoutTimeZoneFromStringLiteralUsingSQLStandardFormat()  {
         AnalyzedRelation relation = analyze("select timestamp without time zone '2018-12-12 00:00:00'");
         assertThat(relation.outputs().get(0).valueType(), is(DataTypes.TIMESTAMP));
+    }
+
+    @Test
+    public void test_cast_time_from_string_literal()  {
+        AnalyzedRelation relation = analyze("select time with time zone '23:59:59.999+02'");
+        assertThat(relation.outputs().get(0).valueType(), is(DataTypes.TIMETZ));
+        assertThat(relation.outputs().get(0).toString(), is("23:59:59.999+02:00"));
+
+        relation = analyze("select '23:59:59.999+02'::timetz");
+        assertThat(relation.outputs().get(0).valueType(), is(DataTypes.TIMETZ));
+        assertThat(relation.outputs().get(0).toString(), is(new TimeTZ(86399999000L, 7200).toString()));
     }
 
     @Test
@@ -1966,7 +2006,7 @@ public class SelectStatementAnalyzerTest extends CrateDummyClusterServiceUnitTes
         AnalyzedRelation rel = analyze("select ({x=10}).x");
         assertThat(
             rel.outputs(),
-            contains(isFunction("subscript_obj", isLiteral(Map.of("x", 10L)), isLiteral("x")))
+            contains(isLiteral(10))
         );
     }
 

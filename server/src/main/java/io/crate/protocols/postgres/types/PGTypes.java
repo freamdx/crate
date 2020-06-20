@@ -31,7 +31,9 @@ import io.crate.types.DataType;
 import io.crate.types.DataTypes;
 import io.crate.types.ObjectType;
 import io.crate.types.RowType;
+import io.crate.types.StringType;
 
+import javax.annotation.Nullable;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
@@ -50,13 +52,15 @@ public class PGTypes {
         .put(DataTypes.LONG, BigIntType.INSTANCE)
         .put(DataTypes.FLOAT, RealType.INSTANCE)
         .put(DataTypes.DOUBLE, DoubleType.INSTANCE)
+        .put(DataTypes.TIMETZ, TimeTZType.INSTANCE)
         .put(DataTypes.TIMESTAMPZ, TimestampZType.INSTANCE)
         .put(DataTypes.TIMESTAMP, TimestampType.INSTANCE)
         .put(DataTypes.IP, VarCharType.INSTANCE) // postgres has no IP type, so map it to varchar - it matches the client representation
         .put(DataTypes.UNDEFINED, VarCharType.INSTANCE)
         .put(DataTypes.GEO_SHAPE, JsonType.INSTANCE)
         .put(DataTypes.GEO_POINT, PointType.INSTANCE)
-        .put(DataTypes.INTERVAL,IntervalType.INSTANCE)
+        .put(DataTypes.INTERVAL, IntervalType.INSTANCE)
+        .put(DataTypes.REGPROC, RegprocType.INSTANCE)
         .put(new ArrayType<>(DataTypes.BYTE), PGArray.CHAR_ARRAY)
         .put(new ArrayType<>(DataTypes.SHORT), PGArray.INT2_ARRAY)
         .put(new ArrayType<>(DataTypes.INTEGER), PGArray.INT4_ARRAY)
@@ -66,6 +70,7 @@ public class PGTypes {
         .put(new ArrayType<>(DataTypes.BOOLEAN), PGArray.BOOL_ARRAY)
         .put(new ArrayType<>(DataTypes.TIMESTAMPZ), PGArray.TIMESTAMPZ_ARRAY)
         .put(new ArrayType<>(DataTypes.TIMESTAMP), PGArray.TIMESTAMP_ARRAY)
+        .put(new ArrayType<>(DataTypes.TIMETZ), PGArray.TIMETZ_ARRAY)
         .put(new ArrayType<>(DataTypes.STRING), PGArray.VARCHAR_ARRAY)
         .put(new ArrayType<>(DataTypes.IP), PGArray.VARCHAR_ARRAY)
         .put(new ArrayType<>(DataTypes.UNTYPED_OBJECT), PGArray.JSON_ARRAY)
@@ -73,6 +78,7 @@ public class PGTypes {
         .put(new ArrayType<>(DataTypes.GEO_SHAPE), PGArray.JSON_ARRAY)
         .put(new ArrayType<>(DataTypes.INTERVAL), PGArray.INTERVAL_ARRAY)
         .put(new ArrayType<>(RowType.EMPTY), PGArray.EMPTY_RECORD_ARRAY)
+        .put(new ArrayType<>(DataTypes.REGPROC), PGArray.REGPROC_ARRAY)
         .build();
 
     private static final IntObjectMap<DataType<?>> PG_TYPES_TO_CRATE_TYPE = new IntObjectHashMap<>();
@@ -105,6 +111,7 @@ public class PGTypes {
         return TYPES;
     }
 
+    @Nullable
     public static DataType<?> fromOID(int oid) {
         return PG_TYPES_TO_CRATE_TYPE.get(oid);
     }
@@ -138,6 +145,9 @@ public class PGTypes {
 
             case RowType.ID:
                 return new RecordType(Lists2.map(((RowType) type).fieldTypes(), PGTypes::get));
+
+            case StringType.ID:
+                return VarCharType.INSTANCE;
 
             default: {
                 PGType pgType = CRATE_TO_PG_TYPES.get(type);

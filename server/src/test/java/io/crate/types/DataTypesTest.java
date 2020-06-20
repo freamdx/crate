@@ -29,18 +29,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-import static io.crate.types.DataTypes.compareTypesById;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.core.IsNot.not;
 
 public class DataTypesTest extends CrateUnitTest {
-
-    @Test
-    public void testConvertBooleanToString() {
-        String value = DataTypes.STRING.value(true);
-        assertEquals("t", value);
-    }
 
     @Test
     public void testConvertStringToBoolean() {
@@ -66,7 +59,6 @@ public class DataTypesTest extends CrateUnitTest {
         assertEquals((Short) (short) 123, DataTypes.SHORT.value(longValue));
         assertEquals((Byte) (byte) 123, DataTypes.BYTE.value(longValue));
         assertEquals((Long) 123L, DataTypes.TIMESTAMPZ.value(longValue));
-        assertEquals("123", DataTypes.STRING.value(longValue));
     }
 
     private static Map<String, Object> testMap = Map.of(
@@ -158,7 +150,6 @@ public class DataTypesTest extends CrateUnitTest {
         assertEquals((Float) 123.0f, DataTypes.FLOAT.value(value));
         assertEquals((Short) (short) 123, DataTypes.SHORT.value(value));
         assertEquals((Byte) (byte) 123, DataTypes.BYTE.value(value));
-        assertEquals("123", DataTypes.STRING.value(value));
     }
 
     @Test(expected = NumberFormatException.class)
@@ -295,36 +286,48 @@ public class DataTypesTest extends CrateUnitTest {
     }
 
     @Test
-    public void test_compare_by_id_primitive_types() {
-        assertThat(compareTypesById(DataTypes.STRING, DataTypes.STRING), is(true));
-        assertThat(compareTypesById(DataTypes.INTEGER, DataTypes.DOUBLE), is(false));
+    public void test_is_same_type_on_primitive_types() {
+        assertThat(DataTypes.isSameType(DataTypes.STRING, DataTypes.STRING), is(true));
+        assertThat(DataTypes.isSameType(DataTypes.INTEGER, DataTypes.DOUBLE), is(false));
     }
 
     @Test
-    public void test_compare_by_id_complex_types() {
-        assertThat(compareTypesById(DataTypes.UNTYPED_OBJECT, DataTypes.BIGINT_ARRAY), is(false));
-        assertThat(compareTypesById(DataTypes.UNTYPED_OBJECT, DataTypes.GEO_POINT), is(false));
+    public void test_is_same_type_on_complex_types() {
+        assertThat(DataTypes.isSameType(DataTypes.UNTYPED_OBJECT, DataTypes.BIGINT_ARRAY), is(false));
+        assertThat(DataTypes.isSameType(DataTypes.UNTYPED_OBJECT, DataTypes.GEO_POINT), is(false));
     }
 
     @Test
-    public void test_compare_by_id_primitive_and_complex_types() {
-        assertThat(compareTypesById(DataTypes.STRING_ARRAY, DataTypes.STRING), is(false));
-        assertThat(compareTypesById(DataTypes.UNTYPED_OBJECT, DataTypes.DOUBLE), is(false));
+    public void test_is_same_type_on_primitive_and_complex_types() {
+        assertThat(DataTypes.isSameType(DataTypes.STRING_ARRAY, DataTypes.STRING), is(false));
+        assertThat(DataTypes.isSameType(DataTypes.UNTYPED_OBJECT, DataTypes.DOUBLE), is(false));
     }
 
     @Test
-    public void test_compare_by_id_array_types_of_the_same_dimension() {
-        assertThat(compareTypesById(DataTypes.STRING_ARRAY, DataTypes.STRING_ARRAY), is(true));
-        assertThat(compareTypesById(DataTypes.STRING_ARRAY, DataTypes.BIGINT_ARRAY), is(false));
+    public void test_is_same_type_on_array_types_of_the_same_dimension() {
+        assertThat(DataTypes.isSameType(DataTypes.STRING_ARRAY, DataTypes.STRING_ARRAY), is(true));
+        assertThat(DataTypes.isSameType(DataTypes.STRING_ARRAY, DataTypes.BIGINT_ARRAY), is(false));
     }
 
     @Test
-    public void test_compare_by_id_array_types_of_not_equal_dimension_and_same_inner_type() {
+    public void test_is_same_type_on_array_types_of_not_equal_dimension_and_same_inner_type() {
         assertThat(
-            compareTypesById(
+            DataTypes.isSameType(
                 new ArrayType<>(DataTypes.STRING_ARRAY),
                 DataTypes.STRING_ARRAY),
             is(false));
+    }
+
+    @Test
+    public void test_resolve_text_data_type_with_length_limit() {
+        assertThat(DataTypes.of("varchar", List.of(1)), is(StringType.of(1)));
+    }
+
+    @Test
+    public void test_resolve_data_type_that_does_not_support_parameters_throws_exception() {
+        expectedException.expect(IllegalArgumentException.class);
+        expectedException.expectMessage("The 'integer' type doesn't support type parameters.");
+        DataTypes.of("integer", List.of(1));
     }
 
     private static void assertCompareValueTo(Object val1, Object val2, int expected) {

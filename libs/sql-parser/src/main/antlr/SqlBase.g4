@@ -537,17 +537,23 @@ rerouteOption
     ;
 
 dataType
-    : definedDataType           #definedDataTypeDefault
-    | ident                     #dataTypeIdent
-    | objectTypeDefinition      #objectDataType
-    | ARRAY '(' dataType ')'    #arrayDataType
-    | dataType '[]'             #arrayDataType
+    : baseDataType
+        ('(' integerLiteral (',' integerLiteral )* ')')?    #maybeParametrizedDataType
+    | objectTypeDefinition                                  #objectDataType
+    | ARRAY '(' dataType ')'                                #arrayDataType
+    | dataType '[]'                                         #arrayDataType
+    ;
+
+baseDataType
+    : definedDataType   #definedDataTypeDefault
+    | ident             #identDataType
     ;
 
 definedDataType
     : DOUBLE PRECISION
     | TIMESTAMP WITHOUT TIME ZONE
     | TIMESTAMP WITH TIME ZONE
+    | TIME WITH TIME ZONE
     | CHARACTER VARYING
     ;
 

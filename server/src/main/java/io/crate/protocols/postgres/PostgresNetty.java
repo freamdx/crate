@@ -73,7 +73,9 @@ public class PostgresNetty extends AbstractLifecycleComponent {
     public static final CrateSetting<Boolean> PSQL_ENABLED_SETTING = CrateSetting.of(Setting.boolSetting(
         "psql.enabled", true,
         Setting.Property.NodeScope), DataTypes.BOOLEAN);
-    public static final CrateSetting<String> PSQL_PORT_SETTING = CrateSetting.of(new Setting<>(
+
+    // Explicit generic is required for eclipse JDT, otherwise it won't compile
+    public static final CrateSetting<String> PSQL_PORT_SETTING = CrateSetting.of(new Setting<String>(
         "psql.port", "5432-5532",
         Function.identity(), Setting.Property.NodeScope), DataTypes.STRING);
 
@@ -87,7 +89,7 @@ public class PostgresNetty extends AbstractLifecycleComponent {
     private final Authentication authentication;
     private final Logger namedLogger;
     private final Settings settings;
-    private UserManager userManager;
+    private final UserManager userManager;
     @Nullable
     private final SslContextProvider sslContextProvider;
 

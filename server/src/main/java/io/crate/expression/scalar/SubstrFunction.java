@@ -21,7 +21,7 @@
 
 package io.crate.expression.scalar;
 
-import com.google.common.annotations.VisibleForTesting;
+import io.crate.common.annotations.VisibleForTesting;
 import io.crate.data.Input;
 import io.crate.metadata.FunctionIdent;
 import io.crate.metadata.FunctionInfo;
@@ -31,7 +31,6 @@ import io.crate.metadata.functions.Signature;
 import io.crate.types.DataTypes;
 
 import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
 
 public class SubstrFunction extends Scalar<String, Object> {
 
@@ -80,7 +79,6 @@ public class SubstrFunction extends Scalar<String, Object> {
         return info;
     }
 
-    @Nullable
     @Override
     public Signature signature() {
         return signature;

@@ -35,6 +35,7 @@ import io.crate.execution.dsl.projection.MergeCountProjection;
 import io.crate.execution.dsl.projection.OrderedTopNProjection;
 import io.crate.execution.dsl.projection.Projection;
 import io.crate.execution.dsl.projection.TopNProjection;
+import io.crate.expression.scalar.cast.ImplicitCastFunction;
 import io.crate.expression.symbol.InputColumn;
 import io.crate.expression.symbol.Symbol;
 import io.crate.metadata.PartitionName;
@@ -356,7 +357,16 @@ public class InsertPlannerTest extends CrateDummyClusterServiceUnitTest {
             instanceOf(EvalProjection.class),
             instanceOf(ColumnIndexWriterProjection.class)));
         EvalProjection collectTopN = (EvalProjection) collectPhase.projections().get(1);
-        assertThat(collectTopN.outputs(), contains(isInputColumn(0), isFunction("to_text")));
+        assertThat(
+            collectTopN.outputs(),
+            contains(
+                isInputColumn(0),
+                isFunction(
+                    ImplicitCastFunction.NAME,
+                    List.of(DataTypes.LONG, DataTypes.STRING)
+                )
+            )
+        );
 
         ColumnIndexWriterProjection columnIndexWriterProjection = (ColumnIndexWriterProjection) collectPhase.projections().get(2);
         assertThat(columnIndexWriterProjection.columnReferencesExclPartition(), contains(isReference("id"), isReference("name")));
@@ -421,7 +431,10 @@ public class InsertPlannerTest extends CrateDummyClusterServiceUnitTest {
         );
         assertThat(projections.get(0).outputs(),
             contains(
-                isFunction("to_bigint"),
+                isFunction(
+                    ImplicitCastFunction.NAME,
+                    List.of(DataTypes.INTEGER, DataTypes.STRING)
+                ),
                 isInputColumn(1)
             )
         );
@@ -440,5 +453,20 @@ public class InsertPlannerTest extends CrateDummyClusterServiceUnitTest {
     public void test_insert_from_query_rewritten_to_insert_from_values() {
         Plan plan = e.logicalPlan("insert into users (id, name) values (42, 'Deep Thought')");
         assertThat(plan, instanceOf(InsertFromValues.class));
+    }
+
+    @Test
+    public void test_insert_select_distinct() throws Exception {
+        Merge merge = e.plan("insert into users (id) (select distinct id from users)");
+        Collect collect = (Collect) merge.subPlan();
+        List<Projection> projections = collect.collectPhase().projections();
+        assertThat(
+            projections,
+            contains(
+                instanceOf(GroupProjection.class),
+                instanceOf(ColumnIndexWriterProjection.class)
+            )
+        );
+        assertThat(projections.get(0).requiredGranularity(), is(RowGranularity.SHARD));
     }
 }

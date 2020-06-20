@@ -54,6 +54,11 @@ final class ParameterTypeSignature extends TypeSignature {
 
     @Override
     public TypeSignatureType type() {
-        return TypeSignatureType.OBJECT_PARAMETER_TYPE_SIGNATURE;
+        return TypeSignatureType.PARAMETER_TYPE_SIGNATURE;
+    }
+
+    @Override
+    public String toString() {
+        return parameterName + " " + super.toString();
     }
 }

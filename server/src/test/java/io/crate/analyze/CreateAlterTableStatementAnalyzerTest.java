@@ -29,7 +29,6 @@ import io.crate.exceptions.InvalidRelationName;
 import io.crate.exceptions.InvalidSchemaNameException;
 import io.crate.exceptions.OperationOnInaccessibleRelationException;
 import io.crate.exceptions.RelationAlreadyExists;
-import io.crate.exceptions.SQLParseException;
 import io.crate.exceptions.UnsupportedFeatureException;
 import io.crate.metadata.ColumnIdent;
 import io.crate.metadata.FulltextAnalyzerResolver;
@@ -154,6 +153,20 @@ public class CreateAlterTableStatementAnalyzerTest extends CrateDummyClusterServ
             "Column [ts]: Usage of the `TIMESTAMP` data type as a timestamp with zone is deprecated," +
             " use the `TIMESTAMPTZ` or `TIMESTAMP WITH TIME ZONE` data type instead."
         );
+    }
+
+    @Test
+    public void test_cannot_create_table_that_contains_a_column_definition_of_type_time () {
+        expectedException.expect(IllegalArgumentException.class);
+        expectedException.expectMessage("Cannot use the type `time with time zone` for column: ts");
+        analyze("create table t (ts time with time zone)");
+    }
+
+    @Test
+    public void test_cannot_alter_table_to_add_a_column_definition_of_type_time () {
+        expectedException.expect(IllegalArgumentException.class);
+        expectedException.expectMessage("Cannot use the type `time with time zone` for column: ts");
+        analyze("alter table user_refresh_interval add column ts time with time zone");
     }
 
     @Test
@@ -1028,7 +1041,7 @@ public class CreateAlterTableStatementAnalyzerTest extends CrateDummyClusterServ
         Map<String, String> generatedColumnsMapping = (Map<String, String>) metaMapping.get("generated_columns");
         assertThat(
             generatedColumnsMapping.get("day"),
-            is("cast((cast(ts AS bigint) + 1) AS timestamp with time zone)"));
+            is("(ts + 1::bigint)"));
 
         Map<String, Object> mappingProperties = analysis.mappingProperties();
         Map<String, Object> dayMapping = (Map<String, Object>) mappingProperties.get("day");
@@ -1136,7 +1149,7 @@ public class CreateAlterTableStatementAnalyzerTest extends CrateDummyClusterServ
 
         Map<String, Object> mappingProperties = analysis.mappingProperties();
         assertThat(mapToSortedString(mappingProperties),
-                   is("id={default_expr=cast(3.5 AS integer), position=1, type=integer}"));
+                   is("id={default_expr=_cast(3.5, 'integer'), position=1, type=integer}"));
     }
 
     @Test
@@ -1171,8 +1184,8 @@ public class CreateAlterTableStatementAnalyzerTest extends CrateDummyClusterServ
             "   s geo_shape default 'LINESTRING (0 0, 1 1)')");
 
         assertThat(mapToSortedString(analysis.mappingProperties()), is(
-            "p={default_expr=cast([0, 0] AS geo_point), position=1, type=geo_point}, " +
-            "s={default_expr=cast('LINESTRING (0 0, 1 1)' AS geo_shape), position=2, type=geo_shape}"));
+            "p={default_expr=_cast([0, 0], 'geo_point'), position=1, type=geo_point}, " +
+            "s={default_expr=_cast('LINESTRING (0 0, 1 1)', 'geo_shape'), position=2, type=geo_shape}"));
     }
 
     @Test
@@ -1295,13 +1308,13 @@ public class CreateAlterTableStatementAnalyzerTest extends CrateDummyClusterServ
     public void testGeneratedColumnInsideObjectIsProcessed() {
         BoundCreateTable stmt = analyze("create table t (obj object as (c as 1 + 1))");
         AnalyzedColumnDefinition<Object> obj = stmt.analyzedTableElements().columns().get(0);
-        AnalyzedColumnDefinition c = obj.children().get(0);
+        AnalyzedColumnDefinition<?> c = obj.children().get(0);
 
-        assertThat(c.dataType(), is(DataTypes.LONG));
+        assertThat(c.dataType(), is(DataTypes.INTEGER));
         assertThat(c.formattedGeneratedExpression(), is("2"));
         assertThat(AnalyzedTableElements.toMapping(stmt.analyzedTableElements()).toString(),
                    is("{_meta={generated_columns={obj.c=2}}, " +
-                      "properties={obj={dynamic=true, position=1, type=object, properties={c={type=long}}}}}"));
+                      "properties={obj={dynamic=true, position=1, type=object, properties={c={type=integer}}}}}"));
     }
 
     @Test
@@ -1344,5 +1357,22 @@ public class CreateAlterTableStatementAnalyzerTest extends CrateDummyClusterServ
         assertThat(
             mapToSortedString(stmt.mappingProperties()),
             is("name={position=1, type=keyword}"));
+    }
+
+    @Test
+    public void test_create_table_with_varchar_column_of_limited_length() {
+        BoundCreateTable stmt = analyze("CREATE TABLE tbl (name character varying(2))");
+        assertThat(
+            mapToSortedString(stmt.mappingProperties()),
+            is("name={length_limit=2, position=1, type=keyword}"));
+    }
+
+    @Test
+    public void test_create_table_with_varchar_column_of_limited_length_with_analyzer_throws_exception() {
+        expectedException.expect(IllegalArgumentException.class);
+        expectedException.expectMessage(
+            "Can't use an Analyzer on column name because analyzers are only allowed on columns " +
+            "of type \"" + DataTypes.STRING.getName() + "\" of the unbound length limit.");
+        analyze("CREATE TABLE tbl (name varchar(2) INDEX using fulltext WITH (analyzer='german'))");
     }
 }

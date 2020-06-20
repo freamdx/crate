@@ -21,17 +21,15 @@
 
 package io.crate.execution.engine.collect.files;
 
-import com.google.common.base.MoreObjects;
-import com.google.common.collect.ImmutableList;
+import io.crate.common.collections.Tuple;
 import io.crate.data.BatchIterator;
-import io.crate.data.CloseAssertingBatchIterator;
 import io.crate.data.Input;
 import io.crate.data.Row;
+import io.crate.exceptions.Exceptions;
 import io.crate.execution.dsl.phases.FileUriCollectPhase;
 import io.crate.expression.InputRow;
-import org.apache.logging.log4j.Logger;
-import io.crate.common.collections.Tuple;
 import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -50,6 +48,7 @@ import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
@@ -73,6 +72,8 @@ public class FileReadingIterator implements BatchIterator<Row> {
 
     private final List<UriWithGlob> urisWithGlob;
     private final Iterable<LineCollectorExpression<?>> collectorExpressions;
+
+    private volatile Throwable killed;
     private FileUriCollectPhase.InputFormat inputFormat;
     private Iterator<Tuple<FileInput, UriWithGlob>> fileInputsIterator = null;
     private Tuple<FileInput, UriWithGlob> currentInput = null;
@@ -111,7 +112,7 @@ public class FileReadingIterator implements BatchIterator<Row> {
 
     @Override
     public void kill(@Nonnull Throwable throwable) {
-        // handled by CloseAssertingBatchIterator
+        killed = throwable;
     }
 
     public static BatchIterator<Row> newInstance(Collection<String> fileUris,
@@ -123,8 +124,8 @@ public class FileReadingIterator implements BatchIterator<Row> {
                                                  int numReaders,
                                                  int readerNumber,
                                                  FileUriCollectPhase.InputFormat inputFormat) {
-        return new CloseAssertingBatchIterator<>(new FileReadingIterator(fileUris, inputs, collectorExpressions,
-            compression, fileInputFactories, shared, numReaders, readerNumber, inputFormat));
+        return new FileReadingIterator(fileUris, inputs, collectorExpressions,
+            compression, fileInputFactories, shared, numReaders, readerNumber, inputFormat);
     }
 
     private void initCollectorState() {
@@ -141,11 +142,13 @@ public class FileReadingIterator implements BatchIterator<Row> {
 
     @Override
     public void moveToStart() {
+        raiseIfKilled();
         initCollectorState();
     }
 
     @Override
     public boolean moveNext() {
+        raiseIfKilled();
         try {
             if (currentReader != null) {
                 String line = getLine(currentReader, currentLineNumber, 0);
@@ -249,6 +252,7 @@ public class FileReadingIterator implements BatchIterator<Row> {
     public void close() {
         closeCurrentReader();
         releaseBatchIteratorState();
+        killed = BatchIterator.CLOSED;
     }
 
     private void releaseBatchIteratorState() {
@@ -371,16 +375,16 @@ public class FileReadingIterator implements BatchIterator<Row> {
         if (preGlobUri != null) {
             uris = fileInput.listUris(preGlobUri, uriPredicate);
         } else if (uriPredicate.test(fileUri)) {
-            uris = ImmutableList.of(fileUri);
+            uris = List.of(fileUri);
         } else {
-            uris = ImmutableList.of();
+            uris = List.of();
         }
         return uris;
     }
 
     private Predicate<URI> generateUriPredicate(FileInput fileInput, @Nullable Predicate<URI> globPredicate) {
         Predicate<URI> moduloPredicate;
-        boolean sharedStorage = MoreObjects.firstNonNull(shared, fileInput.sharedStorageDefault());
+        boolean sharedStorage = Objects.requireNonNullElse(shared, fileInput.sharedStorageDefault());
         if (sharedStorage) {
             moduloPredicate = input -> {
                 int hash = input.hashCode();
@@ -397,6 +401,12 @@ public class FileReadingIterator implements BatchIterator<Row> {
             return moduloPredicate.and(globPredicate);
         }
         return moduloPredicate;
+    }
+
+    private void raiseIfKilled() {
+        if (killed != null) {
+            Exceptions.rethrowUnchecked(killed);
+        }
     }
 
     private static class GlobPredicate implements Predicate<URI> {

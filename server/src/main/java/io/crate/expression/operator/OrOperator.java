@@ -28,6 +28,7 @@ import io.crate.expression.symbol.Literal;
 import io.crate.expression.symbol.Symbol;
 import io.crate.metadata.FunctionInfo;
 import io.crate.metadata.TransactionContext;
+import io.crate.metadata.functions.Signature;
 import io.crate.types.DataTypes;
 
 public class OrOperator extends Operator<Boolean> {
@@ -35,8 +36,30 @@ public class OrOperator extends Operator<Boolean> {
     public static final String NAME = "op_or";
     public static final FunctionInfo INFO = generateInfo(NAME, DataTypes.BOOLEAN);
 
+    public static final Signature SIGNATURE = Signature.scalar(
+        NAME,
+        DataTypes.BOOLEAN.getTypeSignature(),
+        DataTypes.BOOLEAN.getTypeSignature(),
+        DataTypes.BOOLEAN.getTypeSignature()
+    );
+
+
     public static void register(OperatorModule module) {
-        module.registerOperatorFunction(new OrOperator());
+        module.register(
+            SIGNATURE,
+            (signature, dataTypes) -> new OrOperator(signature)
+        );
+    }
+
+    private final Signature signature;
+
+    public OrOperator(Signature signature) {
+        this.signature = signature;
+    }
+
+    @Override
+    public Signature signature() {
+        return signature;
     }
 
     @Override

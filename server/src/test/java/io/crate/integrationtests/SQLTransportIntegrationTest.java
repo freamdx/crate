@@ -21,72 +21,12 @@
 
 package io.crate.integrationtests;
 
-import static io.crate.protocols.postgres.PostgresNetty.PSQL_PORT_SETTING;
-import static org.elasticsearch.http.HttpTransportSettings.SETTING_HTTP_COMPRESSION;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.not;
-import static org.hamcrest.Matchers.nullValue;
-
-import java.io.IOException;
-import java.lang.annotation.Annotation;
-import java.lang.annotation.Documented;
-import java.lang.annotation.Inherited;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.net.InetSocketAddress;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Random;
-import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-
-import javax.annotation.Nullable;
-
 import com.carrotsearch.hppc.cursors.ObjectCursor;
 import com.carrotsearch.randomizedtesting.RandomizedContext;
 import com.carrotsearch.randomizedtesting.annotations.Listeners;
 import com.carrotsearch.randomizedtesting.annotations.TestGroup;
 import com.carrotsearch.randomizedtesting.generators.RandomStrings;
 import com.google.common.collect.Multimap;
-
-import org.elasticsearch.action.admin.cluster.state.ClusterStateRequest;
-import org.elasticsearch.action.admin.cluster.state.ClusterStateResponse;
-import org.elasticsearch.client.Client;
-import org.elasticsearch.client.Requests;
-import org.elasticsearch.cluster.metadata.IndexMetaData;
-import org.elasticsearch.cluster.metadata.MappingMetaData;
-import org.elasticsearch.cluster.metadata.MetaData;
-import org.elasticsearch.common.Randomness;
-import org.elasticsearch.common.Strings;
-import org.elasticsearch.common.inject.ConfigurationException;
-import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.common.transport.BoundTransportAddress;
-import org.elasticsearch.common.xcontent.XContentBuilder;
-import org.elasticsearch.common.xcontent.XContentFactory;
-import org.elasticsearch.index.IndexService;
-import org.elasticsearch.index.shard.IndexShard;
-import org.elasticsearch.indices.IndicesService;
-import org.elasticsearch.plugins.Plugin;
-import org.elasticsearch.test.ESIntegTestCase;
-import org.elasticsearch.threadpool.ThreadPool;
-import org.elasticsearch.transport.Netty4Plugin;
-import org.hamcrest.Matcher;
-import org.hamcrest.Matchers;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.rules.ExpectedException;
-import org.junit.rules.TestName;
-import org.junit.rules.Timeout;
-
 import io.crate.action.sql.Option;
 import io.crate.action.sql.SQLOperations;
 import io.crate.action.sql.Session;
@@ -106,9 +46,10 @@ import io.crate.execution.jobs.RootTask;
 import io.crate.execution.jobs.TasksService;
 import io.crate.execution.jobs.kill.KillableCallable;
 import io.crate.expression.symbol.Literal;
+import io.crate.expression.symbol.Symbol;
+import io.crate.expression.symbol.Symbols;
 import io.crate.metadata.ColumnIdent;
 import io.crate.metadata.CoordinatorTxnCtx;
-import io.crate.metadata.FunctionIdent;
 import io.crate.metadata.FunctionImplementation;
 import io.crate.metadata.Functions;
 import io.crate.metadata.RelationName;
@@ -136,6 +77,64 @@ import io.crate.testing.UseHashJoins;
 import io.crate.testing.UseJdbc;
 import io.crate.testing.UseRandomizedSchema;
 import io.crate.types.DataType;
+import org.elasticsearch.action.admin.cluster.state.ClusterStateRequest;
+import org.elasticsearch.action.admin.cluster.state.ClusterStateResponse;
+import org.elasticsearch.client.Client;
+import org.elasticsearch.client.Requests;
+import org.elasticsearch.cluster.metadata.IndexMetaData;
+import org.elasticsearch.cluster.metadata.MappingMetaData;
+import org.elasticsearch.cluster.metadata.MetaData;
+import org.elasticsearch.common.Randomness;
+import org.elasticsearch.common.Strings;
+import org.elasticsearch.common.inject.ConfigurationException;
+import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.common.transport.BoundTransportAddress;
+import org.elasticsearch.common.xcontent.XContentBuilder;
+import org.elasticsearch.common.xcontent.XContentFactory;
+import org.elasticsearch.http.netty4.Netty4HttpServerTransport;
+import org.elasticsearch.index.IndexService;
+import org.elasticsearch.index.shard.IndexShard;
+import org.elasticsearch.indices.IndicesService;
+import org.elasticsearch.plugins.Plugin;
+import org.elasticsearch.test.ESIntegTestCase;
+import org.elasticsearch.threadpool.ThreadPool;
+import org.elasticsearch.transport.Netty4Plugin;
+import org.hamcrest.Matcher;
+import org.hamcrest.Matchers;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.rules.ExpectedException;
+import org.junit.rules.TestName;
+import org.junit.rules.Timeout;
+
+import javax.annotation.Nullable;
+import java.io.IOException;
+import java.lang.annotation.Annotation;
+import java.lang.annotation.Documented;
+import java.lang.annotation.Inherited;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.net.InetSocketAddress;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Random;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+
+import static io.crate.protocols.postgres.PostgresNetty.PSQL_PORT_SETTING;
+import static org.elasticsearch.http.HttpTransportSettings.SETTING_HTTP_COMPRESSION;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.nullValue;
 
 @Listeners({SystemPropsTestLoggingListener.class})
 @UseJdbc
@@ -177,6 +176,7 @@ public abstract class SQLTransportIntegrationTest extends ESIntegTestCase {
         Settings.Builder builder = Settings.builder()
             .put(super.nodeSettings(nodeOrdinal))
             .put(SETTING_HTTP_COMPRESSION.getKey(), false)
+            .put(Netty4HttpServerTransport.SETTING_HTTP_WORKER_COUNT.getKey(), 1)
             .put(PSQL_PORT_SETTING.getKey(), 0);
         if (randomBoolean()) {
             builder.put("memory.allocation.type", "off-heap");
@@ -608,19 +608,24 @@ public abstract class SQLTransportIntegrationTest extends ESIntegTestCase {
         }, 20L, TimeUnit.SECONDS);
     }
 
-    public void assertFunctionIsDeletedOnAll(String schema, String name, List<DataType> argTypes) throws Exception {
+    public void assertFunctionIsDeletedOnAll(String schema, String name, List<Symbol> arguments) throws Exception {
         assertBusy(() -> {
             Iterable<Functions> functions = internalCluster().getInstances(Functions.class);
             for (Functions function : functions) {
-                FunctionImplementation func = function.getQualified(new FunctionIdent(schema, name, argTypes));
-                if (func != null) {
-                    // if no exact function match is found for given arguments,
-                    // the function with arguments that can be casted to provided
-                    // arguments will be returned. Therefore, we have to assert that
-                    // the provided arguments do not match the arguments of the resolved
-                    // function if the function was deleted.
-                    assertThat(func.info().ident().argumentTypes(), not(equalTo(argTypes)));
+                try {
+                    var func = function.get(schema, name, arguments, SearchPath.createSearchPathFrom(schema));
+                    if (func != null) {
+                        // if no exact function match is found for given arguments,
+                        // the function with arguments that can be casted to provided
+                        // arguments will be returned. Therefore, we have to assert that
+                        // the provided arguments do not match the arguments of the resolved
+                        // function if the function was deleted.
+                        assertThat(func.info().ident().argumentTypes(), not(equalTo(Symbols.typeView(arguments))));
+                    }
+                } catch (UnsupportedOperationException e) {
+                    assertThat(e.getMessage().startsWith("unknown function"), is(true));
                 }
+
             }
         }, 20L, TimeUnit.SECONDS);
     }

@@ -82,7 +82,7 @@ public class DeleteAnalyzerTest extends CrateDummyClusterServiceUnitTest {
 
     @Test
     public void testDeleteWherePartitionedByColumn() throws Exception {
-        AnalyzedDeleteStatement delete = e.analyze("delete from parted where date = 1395874800000");
+        AnalyzedDeleteStatement delete = e.analyze("delete from parted where date = 1395874800000::timestamp");
         assertThat(delete.query(), isFunction(EqOperator.NAME, isReference("date"), isLiteral(1395874800000L)));
     }
 
@@ -95,8 +95,10 @@ public class DeleteAnalyzerTest extends CrateDummyClusterServiceUnitTest {
         assertThat(actualStatement.query(), equalTo(expectedStatement.query()));
     }
 
-    @Test(expected = IllegalArgumentException.class)
+    @Test
     public void testWhereClauseObjectArrayField() throws Exception {
+        expectedException.expect(UnsupportedOperationException.class);
+        expectedException.expectMessage("unknown function: op_=(bigint_array, integer)");
         e.analyze("delete from users where friends['id'] = 5");
     }
 

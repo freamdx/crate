@@ -22,7 +22,6 @@
 
 package io.crate.action.sql;
 
-import com.google.common.annotations.VisibleForTesting;
 import io.crate.analyze.AnalyzedBegin;
 import io.crate.analyze.AnalyzedDeallocate;
 import io.crate.analyze.AnalyzedStatement;
@@ -30,6 +29,7 @@ import io.crate.analyze.Analyzer;
 import io.crate.analyze.ParamTypeHints;
 import io.crate.analyze.Relations;
 import io.crate.auth.user.AccessControl;
+import io.crate.common.annotations.VisibleForTesting;
 import io.crate.common.collections.Lists2;
 import io.crate.data.Row;
 import io.crate.data.Row1;
@@ -187,7 +187,6 @@ public class Session implements AutoCloseable {
             resultReceiver = new RetryOnFailureResultReceiver(
                 executor.clusterService(),
                 clusterState,
-                executor.threadPool().getThreadContext(),
                 // not using planner.currentClusterState().metaData()::hasIndex to make sure the *current*
                 // clusterState at the time of the index check is used
                 indexName -> clusterState.metaData().hasIndex(indexName),
@@ -545,7 +544,6 @@ public class Session implements AutoCloseable {
             resultReceiver = new RetryOnFailureResultReceiver(
                 executor.clusterService(),
                 clusterState,
-                executor.threadPool().getThreadContext(),
                 indexName -> executor.clusterService().state().metaData().hasIndex(indexName),
                 resultReceiver,
                 jobId,

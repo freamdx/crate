@@ -103,7 +103,7 @@ public class RepositoriesService implements ClusterStateApplier {
             registrationListener = listener;
         }
 
-        clusterService.submitStateUpdateTask(request.cause, new AckedClusterStateUpdateTask<ClusterStateUpdateResponse>(request, registrationListener) {
+        clusterService.submitStateUpdateTask(request.cause, new AckedClusterStateUpdateTask<>(request, registrationListener) {
             @Override
             protected ClusterStateUpdateResponse newResponse(boolean acknowledged) {
                 return new ClusterStateUpdateResponse(acknowledged);
@@ -171,7 +171,7 @@ public class RepositoriesService implements ClusterStateApplier {
      * @param listener unregister repository listener
      */
     public void unregisterRepository(final UnregisterRepositoryRequest request, final ActionListener<ClusterStateUpdateResponse> listener) {
-        clusterService.submitStateUpdateTask(request.cause, new AckedClusterStateUpdateTask<ClusterStateUpdateResponse>(request, listener) {
+        clusterService.submitStateUpdateTask(request.cause, new AckedClusterStateUpdateTask<>(request, listener) {
 
             @Override
             protected ClusterStateUpdateResponse newResponse(boolean acknowledged) {
@@ -217,13 +217,14 @@ public class RepositoriesService implements ClusterStateApplier {
 
     public void verifyRepository(final String repositoryName, final ActionListener<VerifyResponse> listener) {
         final Repository repository = repository(repositoryName);
+        final boolean readOnly = repository.isReadOnly();
         try {
             threadPool.executor(ThreadPool.Names.SNAPSHOT).execute(() -> {
                 try {
                     final String verificationToken = repository.startVerification();
                     if (verificationToken != null) {
                         try {
-                            verifyAction.verify(repositoryName, verificationToken, new ActionListener<VerifyResponse>() {
+                            verifyAction.verify(repositoryName, readOnly, verificationToken, new ActionListener<VerifyResponse>() {
                                 @Override
                                 public void onResponse(VerifyResponse verifyResponse) {
                                     threadPool.executor(ThreadPool.Names.SNAPSHOT).execute(() -> {

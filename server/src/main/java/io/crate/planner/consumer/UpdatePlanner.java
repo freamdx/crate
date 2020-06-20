@@ -21,13 +21,13 @@
 
 package io.crate.planner.consumer;
 
-import com.google.common.annotations.VisibleForTesting;
 import io.crate.action.sql.SessionContext;
 import io.crate.analyze.AnalyzedUpdateStatement;
 import io.crate.analyze.WhereClause;
 import io.crate.analyze.relations.AbstractTableRelation;
 import io.crate.analyze.relations.DocTableRelation;
 import io.crate.analyze.relations.TableRelation;
+import io.crate.common.annotations.VisibleForTesting;
 import io.crate.data.Row;
 import io.crate.data.RowConsumer;
 import io.crate.exceptions.UnsupportedFeatureException;
@@ -66,6 +66,7 @@ import io.crate.planner.node.dql.Collect;
 import io.crate.planner.operators.LogicalPlan;
 import io.crate.planner.operators.SubQueryAndParamBinder;
 import io.crate.planner.operators.SubQueryResults;
+import io.crate.planner.optimizer.symbol.Optimizer;
 import io.crate.types.DataTypes;
 import org.elasticsearch.Version;
 
@@ -75,7 +76,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
-import static com.google.common.collect.Lists.newArrayList;
 import static java.util.Collections.singletonList;
 import static java.util.Objects.requireNonNull;
 
@@ -134,10 +134,16 @@ public final class UpdatePlanner {
         EvaluatingNormalizer normalizer = EvaluatingNormalizer.functionOnlyNormalizer(functions);
         DocTableInfo tableInfo = docTable.tableInfo();
         WhereClauseOptimizer.DetailedQuery detailedQuery = WhereClauseOptimizer.optimize(
-            normalizer, query, tableInfo, plannerCtx.transactionContext());
+            normalizer, query, tableInfo, plannerCtx.transactionContext(), functions);
 
         if (detailedQuery.docKeys().isPresent()) {
-            return new UpdateById(tableInfo, assignmentByTargetCol, detailedQuery.docKeys().get(), returnValues);
+            return new UpdateById(
+                tableInfo,
+                assignmentByTargetCol,
+                detailedQuery.docKeys().get(),
+                returnValues,
+                plannerCtx.functions()
+            );
         }
 
         return new Update((plannerContext, params, subQueryValues) ->
@@ -258,7 +264,7 @@ public final class UpdatePlanner {
         DocTableInfo tableInfo = table.tableInfo();
         Reference idReference = requireNonNull(tableInfo.getReference(DocSysColumns.ID),
                                                "Table must have a _id column");
-        Assignments assignments = Assignments.convert(assignmentByTargetCol);
+        Assignments assignments = Assignments.convert(assignmentByTargetCol, functions);
         Symbol[] assignmentSources = assignments.bindSources(tableInfo, params, subQueryResults);
         Symbol[] outputSymbols;
         if (returnValues == null) {
@@ -325,9 +331,9 @@ public final class UpdatePlanner {
             "collect",
             routing,
             tableInfo.rowGranularity(),
-            newArrayList(idReference),
+            List.of(idReference),
             singletonList(updateProjection),
-            where.queryOrFallback(),
+            Optimizer.optimizeCasts(where.queryOrFallback(), plannerCtx),
             DistributionInfo.DEFAULT_BROADCAST
         );
         Collect collect = new Collect(collectPhase, TopN.NO_LIMIT, 0, numOutPuts, maxRowsPerNode, null);

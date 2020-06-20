@@ -74,6 +74,8 @@ public class AzureRepository extends BlobStoreRepository {
 
         static final Setting<SecureString> KEY_SETTING = Setting.maskedString("key");
 
+        public static final Setting<String> CLIENT_NAME = Setting.simpleString("client", Property.NodeScope);
+
         static final Setting<String> CONTAINER_SETTING = new Setting<>(
                 "container",
                 "crate-snapshots",
@@ -159,7 +161,6 @@ public class AzureRepository extends BlobStoreRepository {
         return List.of(Repository.ACCOUNT_SETTING, Repository.KEY_SETTING);
     }
 
-    private final BlobPath basePath;
     private final ByteSizeValue chunkSize;
     private final AzureStorageService storageService;
     private final boolean readonly;
@@ -169,21 +170,9 @@ public class AzureRepository extends BlobStoreRepository {
                            NamedXContentRegistry namedXContentRegistry,
                            AzureStorageService storageService,
                            ThreadPool threadPool) {
-        super(metadata, environment.settings(), namedXContentRegistry, threadPool);
+        super(metadata, environment.settings(), namedXContentRegistry, threadPool, buildBasePath(metadata));
         this.chunkSize = Repository.CHUNK_SIZE_SETTING.get(metadata.settings());
         this.storageService = storageService;
-
-        final String basePath = Strings.trimLeadingCharacter(Repository.BASE_PATH_SETTING.get(metadata.settings()), '/');
-        if (Strings.hasLength(basePath)) {
-            // Remove starting / if any
-            BlobPath path = new BlobPath();
-            for (final String elem : basePath.split("/")) {
-                path = path.add(elem);
-            }
-            this.basePath = path;
-        } else {
-            this.basePath = BlobPath.cleanPath();
-        }
 
         // If the user explicitly did not define a readonly value, we set it by ourselves depending on the location mode setting.
         // For secondary_only setting, the repository should be read only
@@ -194,6 +183,22 @@ public class AzureRepository extends BlobStoreRepository {
             this.readonly = locationMode == LocationMode.SECONDARY_ONLY;
         }
     }
+
+    private static BlobPath buildBasePath(RepositoryMetaData metadata) {
+        final String basePath = Strings.trimLeadingCharacter(Repository.BASE_PATH_SETTING.get(metadata.settings()), '/');
+        if (Strings.hasLength(basePath)) {
+            // Remove starting / if any
+            BlobPath path = new BlobPath();
+            for (final String elem : basePath.split("/")) {
+                path = path.add(elem);
+            }
+            return path;
+        } else {
+            return BlobPath.cleanPath();
+        }
+    }
+
+
 
     @VisibleForTesting
     @Override
@@ -210,13 +215,8 @@ public class AzureRepository extends BlobStoreRepository {
 
         LOGGER.debug((org.apache.logging.log4j.util.Supplier<?>) () -> new ParameterizedMessage(
             "using container [{}], chunk_size [{}], compress [{}], base_path [{}]",
-            blobStore, chunkSize, isCompress(), basePath));
+            blobStore, chunkSize, isCompress(), basePath()));
         return blobStore;
-    }
-
-    @Override
-    protected BlobPath basePath() {
-        return basePath;
     }
 
     /**

@@ -28,6 +28,7 @@ import io.crate.expression.symbol.Literal;
 import io.crate.expression.symbol.Symbol;
 import io.crate.expression.symbol.format.Style;
 import io.crate.geo.GeoJSONUtils;
+import io.crate.metadata.functions.Signature;
 import io.crate.types.ArrayType;
 import io.crate.types.DataType;
 import io.crate.types.DataTypes;
@@ -40,11 +41,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static io.crate.metadata.functions.TypeVariableConstraint.typeVariable;
 import static io.crate.testing.DataTypeTesting.getDataGenerator;
 import static io.crate.testing.DataTypeTesting.randomType;
 import static io.crate.testing.SymbolMatchers.isFunction;
 import static io.crate.types.DataTypes.GEO_POINT;
 import static io.crate.types.DataTypes.GEO_SHAPE;
+import static io.crate.types.TypeSignature.parseTypeSignature;
 import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.notNullValue;
@@ -68,7 +71,13 @@ public class CastFunctionTest extends AbstractScalarFunctionsTest {
 
     @Test
     public void testNormalize() {
-        assertNormalize("cast(name as bigint)", isFunction("to_bigint"));
+        assertNormalize(
+            "cast(name as bigint)",
+            isFunction(
+                ExplicitCastFunction.NAME,
+                List.of(DataTypes.STRING, DataTypes.LONG)
+            )
+        );
     }
 
     @Test
@@ -76,11 +85,19 @@ public class CastFunctionTest extends AbstractScalarFunctionsTest {
         assertEvaluate("cast(10.4 as string)", "10.4");
         assertEvaluate("cast(null as string)", null);
         assertEvaluate("cast(10.4 as long)", 10L);
-        assertEvaluate("to_bigint_array([10.2, 12.3])", List.of(10L, 12L));
+        assertEvaluate("cast([10.2, 12.3] as array(long))", List.of(10L, 12L));
+    }
 
-        Map<String, Object> object = Map.of("x", 10);
-        assertEvaluate("'{\"x\": 10}'::object", object);
-        assertEvaluate("cast(name as object)", object, Literal.of("{\"x\": 10}"));
+    @Test
+    public void test_cast_json_string_to_object() {
+        Map<String, Object> expected = Map.of("x", 10);
+        assertEvaluate("'{\"x\": 10}'::object", expected);
+        assertEvaluate("cast(name as object)", expected, Literal.of("{\"x\": 10}"));
+    }
+
+    @Test
+    public void test_cast_string_literal_text_with_length_truncates_exceeding_chars() {
+        assertEvaluate("'abcde'::varchar(2)", "ab");
     }
 
     @Test
@@ -119,7 +136,7 @@ public class CastFunctionTest extends AbstractScalarFunctionsTest {
     public void testDoubleColonOperatorCast() {
         assertEvaluate("10.4::string", "10.4");
         assertEvaluate("[1, 2, 0]::array(boolean)", List.of(true, true, false));
-        assertEvaluate("(1+3)/2::string", 2L);
+        assertEvaluate("(1+3)/2::string", 2);
         assertEvaluate("((1+3)/2)::string", "2");
         assertEvaluate("'10'::long + 5", 15L);
         assertEvaluate("(-4)::string", "-4");
@@ -186,7 +203,7 @@ public class CastFunctionTest extends AbstractScalarFunctionsTest {
         Symbol funcSymbol = sqlExpressions.asSymbol("['POINT(2 3)']::array(geo_shape)");
         assertThat(funcSymbol.valueType(), is(new ArrayType<>(GEO_SHAPE)));
         //noinspection unchecked
-        var geoShapes = (List<Map<String, Object>>) ((Literal) funcSymbol).value();
+        var geoShapes = (List<Map<String, Object>>) ((Literal<?>) funcSymbol).value();
         assertThat(
             GEO_SHAPE.compare(
                 geoShapes.get(0),
@@ -217,11 +234,18 @@ public class CastFunctionTest extends AbstractScalarFunctionsTest {
         var returnType = ObjectType.builder()
             .setInnerType("field", DataTypes.STRING)
             .build();
-        var info = CastFunctionResolver.functionInfo(
-                List.of(DataTypes.UNTYPED_OBJECT, returnType), returnType, false);
-        var signature = CastFunctionResolver.createSignature(info);
 
-        var functionImpl = functions.getQualified(signature, List.of(DataTypes.UNTYPED_OBJECT, returnType));
+        var signature = Signature.scalar(
+            ExplicitCastFunction.NAME,
+            parseTypeSignature("E"),
+            parseTypeSignature("V"),
+            parseTypeSignature("V")
+        ).withTypeVariableConstraints(typeVariable("E"), typeVariable("V"));
+        var functionImpl = functions.getQualified(
+            signature,
+            List.of(DataTypes.UNTYPED_OBJECT, returnType)
+        );
+
         assertThat(functionImpl.info().returnType(), is(returnType));
     }
 }

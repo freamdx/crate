@@ -21,7 +21,6 @@
 
 package io.crate.integrationtests;
 
-import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableMap;
 import io.crate.action.sql.SQLActionException;
 import io.crate.metadata.IndexMappings;
@@ -60,7 +59,7 @@ public class InformationSchemaTest extends SQLTransportIntegrationTest {
     @Test
     public void testDefaultTables() {
         execute("select * from information_schema.tables order by table_schema, table_name");
-        assertEquals(38L, response.rowCount());
+        assertEquals(40L, response.rowCount());
 
         assertThat(printedTable(response.rows()), is(
             "NULL| NULL| NULL| strict| NULL| NULL| NULL| SYSTEM GENERATED| NULL| NULL| NULL| information_schema| columns| information_schema| BASE TABLE| NULL\n" +
@@ -79,9 +78,11 @@ public class InformationSchemaTest extends SQLTransportIntegrationTest {
             "NULL| NULL| NULL| strict| NULL| NULL| NULL| SYSTEM GENERATED| NULL| NULL| NULL| pg_catalog| pg_constraint| pg_catalog| BASE TABLE| NULL\n" +
             "NULL| NULL| NULL| strict| NULL| NULL| NULL| SYSTEM GENERATED| NULL| NULL| NULL| pg_catalog| pg_database| pg_catalog| BASE TABLE| NULL\n" +
             "NULL| NULL| NULL| strict| NULL| NULL| NULL| SYSTEM GENERATED| NULL| NULL| NULL| pg_catalog| pg_description| pg_catalog| BASE TABLE| NULL\n" +
+            "NULL| NULL| NULL| strict| NULL| NULL| NULL| SYSTEM GENERATED| NULL| NULL| NULL| pg_catalog| pg_enum| pg_catalog| BASE TABLE| NULL\n" +
             "NULL| NULL| NULL| strict| NULL| NULL| NULL| SYSTEM GENERATED| NULL| NULL| NULL| pg_catalog| pg_index| pg_catalog| BASE TABLE| NULL\n" +
             "NULL| NULL| NULL| strict| NULL| NULL| NULL| SYSTEM GENERATED| NULL| NULL| NULL| pg_catalog| pg_namespace| pg_catalog| BASE TABLE| NULL\n" +
             "NULL| NULL| NULL| strict| NULL| NULL| NULL| SYSTEM GENERATED| NULL| NULL| NULL| pg_catalog| pg_proc| pg_catalog| BASE TABLE| NULL\n" +
+            "NULL| NULL| NULL| strict| NULL| NULL| NULL| SYSTEM GENERATED| NULL| NULL| NULL| pg_catalog| pg_range| pg_catalog| BASE TABLE| NULL\n" +
             "NULL| NULL| NULL| strict| NULL| NULL| NULL| SYSTEM GENERATED| NULL| NULL| NULL| pg_catalog| pg_settings| pg_catalog| BASE TABLE| NULL\n" +
             "NULL| NULL| NULL| strict| NULL| NULL| NULL| SYSTEM GENERATED| NULL| NULL| NULL| pg_catalog| pg_stats| pg_catalog| BASE TABLE| NULL\n" +
             "NULL| NULL| NULL| strict| NULL| NULL| NULL| SYSTEM GENERATED| NULL| NULL| NULL| pg_catalog| pg_type| pg_catalog| BASE TABLE| NULL\n" +
@@ -181,13 +182,13 @@ public class InformationSchemaTest extends SQLTransportIntegrationTest {
     @Test
     public void testSearchInformationSchemaTablesRefresh() {
         execute("select * from information_schema.tables");
-        assertEquals(38L, response.rowCount());
+        assertEquals(40L, response.rowCount());
 
         execute("create table t4 (col1 integer, col2 string) with(number_of_replicas=0)");
         ensureYellow(getFqn("t4"));
 
         execute("select * from information_schema.tables");
-        assertEquals(39L, response.rowCount());
+        assertEquals(41L, response.rowCount());
     }
 
     @Test
@@ -515,7 +516,7 @@ public class InformationSchemaTest extends SQLTransportIntegrationTest {
     @Test
     public void testDefaultColumns() {
         execute("select * from information_schema.columns order by table_schema, table_name");
-        assertEquals(774, response.rowCount());
+        assertEquals(786, response.rowCount());
     }
 
     @Test
@@ -574,15 +575,16 @@ public class InformationSchemaTest extends SQLTransportIntegrationTest {
             "typdefault| text\n" +
             "typdelim| text\n" +
             "typelem| integer\n" +
-            "typinput| text\n" +
+            "typinput| regproc\n" +
             "typisdefined| boolean\n" +
             "typlen| smallint\n" +
             "typname| text\n" +
             "typnamespace| integer\n" +
             "typndims| integer\n" +
             "typnotnull| boolean\n" +
-            "typoutput| text\n" +
+            "typoutput| regproc\n" +
             "typowner| integer\n" +
+            "typreceive| regproc\n" +
             "typrelid| integer\n" +
             "typtype| text\n" +
             "typtypmod| integer\n")
@@ -756,10 +758,9 @@ public class InformationSchemaTest extends SQLTransportIntegrationTest {
         execute("create table t1 (id integer, col1 string) clustered into 10 shards with(number_of_replicas=0)");
         execute("create table t2 (id integer, col1 string) clustered into 5 shards with(number_of_replicas=0)");
         execute("create table t3 (id integer, col1 string) clustered into 3 shards with(number_of_replicas=0)");
-        ensureYellow();
         execute("select count(*) from information_schema.tables");
         assertEquals(1, response.rowCount());
-        assertEquals(41L, response.rows()[0][0]);
+        assertEquals(43L, response.rows()[0][0]);
     }
 
     @Test
@@ -1230,5 +1231,13 @@ public class InformationSchemaTest extends SQLTransportIntegrationTest {
                 "match_option", "unique_constraint_catalog", "unique_constraint_name", "unique_constraint_schema",
                 "update_rule"));
     }
-
+    @Test
+    public void test_character_maximum_length_information_schema_columns() {
+        execute("CREATE TABLE t (col1 varchar, col2 varchar(1)) CLUSTERED INTO 1 SHARDS");
+        execute("SELECT column_name, character_maximum_length " +
+                "FROM information_schema.columns " +
+                "WHERE table_name = 't'");
+        assertThat(printedTable(response.rows()), is("col1| NULL\n" +
+                                                     "col2| 1\n"));
+    }
 }

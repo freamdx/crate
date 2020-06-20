@@ -47,7 +47,7 @@ public class OuterJoinRewriteTest extends CrateDummyClusterServiceUnitTest {
     public void testFilterAndOuterJoinIsRewrittenToInnerJoinIfFilterEliminatesNullRow() {
         var plan = sqlExecutor.logicalPlan(
             "SELECT * FROM t1 LEFT JOIN t2 ON t1.x = t2.x " +
-            "WHERE t2.x = 10"
+            "WHERE t2.x = '10'"
         );
         var expectedPlan =
             "NestedLoopJoin[INNER | (x = x)]\n" +
@@ -63,7 +63,7 @@ public class OuterJoinRewriteTest extends CrateDummyClusterServiceUnitTest {
             "WHERE coalesce(t2.x, 10) = 10"
         );
         var expectedPlan =
-            "Filter[(coalesce(cast(x AS bigint), 10) = 10)]\n" +
+            "Filter[(coalesce(x, 10) = 10)]\n" +
             "  └ NestedLoopJoin[LEFT | (x = x)]\n" +
             "    ├ Collect[doc.t1 | [x] | true]\n" +
             "    └ Collect[doc.t2 | [x] | true]";
@@ -77,7 +77,7 @@ public class OuterJoinRewriteTest extends CrateDummyClusterServiceUnitTest {
             "WHERE coalesce(t2.x, 10) = 10 AND t1.x > 5"
         );
         var expectedPlan =
-            "Filter[(coalesce(cast(x AS bigint), 10) = 10)]\n" +
+            "Filter[(coalesce(x, 10) = 10)]\n" +
             "  └ NestedLoopJoin[LEFT | (x = x)]\n" +
             "    ├ Collect[doc.t1 | [x] | (x > 5)]\n" +
             "    └ Collect[doc.t2 | [x] | true]";
@@ -91,7 +91,7 @@ public class OuterJoinRewriteTest extends CrateDummyClusterServiceUnitTest {
             "WHERE coalesce(t1.x, 10) = 10 AND t2.x > 5"
         );
         var expectedPlan =
-            "Filter[(coalesce(cast(x AS bigint), 10) = 10)]\n" +
+            "Filter[(coalesce(x, 10) = 10)]\n" +
             "  └ NestedLoopJoin[RIGHT | (x = x)]\n" +
             "    ├ Collect[doc.t1 | [x] | true]\n" +
             "    └ Collect[doc.t2 | [x] | (x > 5)]";
@@ -105,7 +105,7 @@ public class OuterJoinRewriteTest extends CrateDummyClusterServiceUnitTest {
             "WHERE coalesce(t1.x, 10) = 10 AND t2.x > 5"
         );
         var expectedPlan =
-            "Filter[((coalesce(cast(x AS bigint), 10) = 10) AND (x > 5))]\n" +
+            "Filter[((coalesce(x, 10) = 10) AND (x > 5))]\n" +
             "  └ NestedLoopJoin[FULL | (x = x)]\n" +
             "    ├ Collect[doc.t1 | [x] | true]\n" +
             "    └ Collect[doc.t2 | [x] | (x > 5)]";

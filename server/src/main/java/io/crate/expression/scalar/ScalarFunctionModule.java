@@ -39,7 +39,9 @@ import io.crate.expression.scalar.arithmetic.RoundFunction;
 import io.crate.expression.scalar.arithmetic.SquareRootFunction;
 import io.crate.expression.scalar.arithmetic.TrigonometricFunctions;
 import io.crate.expression.scalar.arithmetic.TruncFunction;
-import io.crate.expression.scalar.cast.CastFunction;
+import io.crate.expression.scalar.cast.ExplicitCastFunction;
+import io.crate.expression.scalar.cast.ImplicitCastFunction;
+import io.crate.expression.scalar.cast.TryCastFunction;
 import io.crate.expression.scalar.conditional.CoalesceFunction;
 import io.crate.expression.scalar.conditional.GreatestFunction;
 import io.crate.expression.scalar.conditional.IfFunction;
@@ -56,6 +58,7 @@ import io.crate.expression.scalar.postgres.PgGetUserByIdFunction;
 import io.crate.expression.scalar.regex.MatchesFunction;
 import io.crate.expression.scalar.regex.RegexpReplaceFunction;
 import io.crate.expression.scalar.string.AsciiFunction;
+import io.crate.expression.scalar.string.ChrFunction;
 import io.crate.expression.scalar.string.EncodeDecodeFunction;
 import io.crate.expression.scalar.string.HashFunctions;
 import io.crate.expression.scalar.string.InitCapFunction;
@@ -69,6 +72,7 @@ import io.crate.expression.scalar.string.StringRepeatFunction;
 import io.crate.expression.scalar.string.TrimFunctions;
 import io.crate.expression.scalar.systeminformation.CurrentSchemaFunction;
 import io.crate.expression.scalar.systeminformation.CurrentSchemasFunction;
+import io.crate.expression.scalar.systeminformation.FormatTypeFunction;
 import io.crate.expression.scalar.systeminformation.ObjDescriptionFunction;
 import io.crate.expression.scalar.systeminformation.PgGetExpr;
 import io.crate.expression.scalar.systeminformation.PgTypeofFunction;
@@ -77,6 +81,7 @@ import io.crate.expression.scalar.timestamp.CurrentTimestampFunction;
 import io.crate.expression.scalar.timestamp.NowFunction;
 import io.crate.expression.scalar.timestamp.TimezoneFunction;
 import io.crate.metadata.FunctionImplementation;
+import io.crate.metadata.settings.session.SessionSettingRegistry;
 
 public class ScalarFunctionModule extends AbstractFunctionModule<FunctionImplementation> {
 
@@ -123,7 +128,10 @@ public class ScalarFunctionModule extends AbstractFunctionModule<FunctionImpleme
         NowFunction.register(this);
         TimezoneFunction.register(this);
         DateFormatFunction.register(this);
-        CastFunction.register(this);
+
+        ExplicitCastFunction.register(this);
+        ImplicitCastFunction.register(this);
+        TryCastFunction.register(this);
 
         StringCaseFunction.register(this);
         StringLeftRightFunction.register(this);
@@ -133,6 +141,7 @@ public class ScalarFunctionModule extends AbstractFunctionModule<FunctionImpleme
         AsciiFunction.register(this);
         EncodeDecodeFunction.register(this);
         StringRepeatFunction.register(this);
+        ChrFunction.register(this);
 
         ConcatFunction.register(this);
 
@@ -161,7 +170,7 @@ public class ScalarFunctionModule extends AbstractFunctionModule<FunctionImpleme
         CurrentSchemaFunction.register(this);
         CurrentSchemasFunction.register(this);
         PgGetExpr.register(this);
-        CurrentSettingFunction.register(this);
+        CurrentSettingFunction.register(this, getProvider(SessionSettingRegistry.class));
 
         PgBackendPidFunction.register(this);
         PgGetUserByIdFunction.register(this);
@@ -169,5 +178,6 @@ public class ScalarFunctionModule extends AbstractFunctionModule<FunctionImpleme
         CurrentDatabaseFunction.register(this);
         VersionFunction.register(this);
         ObjDescriptionFunction.register(this);
+        FormatTypeFunction.register(this);
     }
 }

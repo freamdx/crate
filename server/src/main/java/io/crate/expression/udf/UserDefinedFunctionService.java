@@ -21,11 +21,12 @@
 
 package io.crate.expression.udf;
 
-import com.google.common.annotations.VisibleForTesting;
+import io.crate.common.annotations.VisibleForTesting;
 import io.crate.common.collections.Lists2;
+import io.crate.common.unit.TimeValue;
 import io.crate.exceptions.UserDefinedFunctionAlreadyExistsException;
 import io.crate.exceptions.UserDefinedFunctionUnknownException;
-import io.crate.metadata.FuncResolver;
+import io.crate.metadata.FunctionProvider;
 import io.crate.metadata.FunctionInfo;
 import io.crate.metadata.FunctionName;
 import io.crate.metadata.Functions;
@@ -42,7 +43,6 @@ import org.elasticsearch.cluster.metadata.MetaData;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.inject.Singleton;
-import io.crate.common.unit.TimeValue;
 
 import javax.annotation.Nullable;
 import javax.script.ScriptException;
@@ -201,11 +201,11 @@ public class UserDefinedFunctionService {
 
 
     public void updateImplementations(String schema, Stream<UserDefinedFunctionMetaData> userDefinedFunctions) {
-        final Map<FunctionName, List<FuncResolver>> implementations = new HashMap<>();
+        final Map<FunctionName, List<FunctionProvider>> implementations = new HashMap<>();
         Iterator<UserDefinedFunctionMetaData> it = userDefinedFunctions.iterator();
         while (it.hasNext()) {
             UserDefinedFunctionMetaData udf = it.next();
-            FuncResolver resolver = buildFunctionResolver(udf);
+            FunctionProvider resolver = buildFunctionResolver(udf);
             if (resolver == null) {
                 continue;
             }
@@ -218,7 +218,7 @@ public class UserDefinedFunctionService {
     }
 
     @Nullable
-    public FuncResolver buildFunctionResolver(UserDefinedFunctionMetaData udf) {
+    public FunctionProvider buildFunctionResolver(UserDefinedFunctionMetaData udf) {
         var functionName = new FunctionName(udf.schema(), udf.name());
         var signature = Signature.builder()
             .name(functionName)
@@ -238,6 +238,6 @@ public class UserDefinedFunctionService {
             return null;
         }
 
-        return new FuncResolver(signature, (s, args) -> scalar);
+        return new FunctionProvider(signature, (s, args) -> scalar);
     }
 }

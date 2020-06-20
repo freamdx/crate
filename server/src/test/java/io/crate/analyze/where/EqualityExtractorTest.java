@@ -368,4 +368,28 @@ public class EqualityExtractorTest extends CrateDummyClusterServiceUnitTest {
         List<List<Symbol>> matches = analyzeExactX(query("x = abs(x)"));
         assertThat(matches, nullValue());
     }
+
+    @Test
+    public void test_primary_key_comparison_is_detected_inside_cast_function() throws Exception {
+        Symbol query = query("cast(x as bigint) = 0");
+        List<List<Symbol>> matches = analyzeExactX(query);
+        assertThat(matches.size(), is(1));
+        assertThat(matches, contains(
+            contains(isLiteral(0L))
+        ));
+    }
+
+    @Test
+    public void test_primary_key_extraction_on_subscript_with_any() {
+        Map<RelationName, AnalyzedRelation> sources = T3.sources(List.of(T3.T4), clusterService);
+        DocTableRelation tr4 = (DocTableRelation) sources.get(T3.T4);
+        var expressionsT4 = new SqlExpressions(sources, tr4);
+        var pkCol = new ColumnIdent("obj");
+
+        var query = expressionsT4.normalize(expressionsT4.asSymbol("obj = any([{i = 1}])"));
+        List<List<Symbol>> matches = analyzeExact(query, List.of(pkCol));
+        assertThat(matches, contains(
+            contains(isLiteral(Map.of("i", 1)))
+        ));
+    }
 }

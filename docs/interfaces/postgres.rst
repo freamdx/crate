@@ -143,6 +143,8 @@ following tables:
  - `pg_constraint <pgsql_pg_constraint_>`__
  - `pg_settings <pgsql_pg_settings_>`__
  - `pg_description`_
+ - `pg_range`_
+ - `pg_enum`_
 
 
 .. _postgres_pg_type:
@@ -168,6 +170,7 @@ table available in CrateDB::
     |   20 | int8                         |     1016 |       0 |      8 | b       | N           |
     |   21 | int2                         |     1005 |       0 |      2 | b       | N           |
     |   23 | int4                         |     1007 |       0 |      4 | b       | N           |
+    |   24 | regproc                      |     1008 |       0 |      4 | b       | N           |
     |  114 | json                         |      199 |       0 |     -1 | b       | U           |
     |  199 | _json                        |        0 |     114 |     -1 | b       | A           |
     |  600 | point                        |     1017 |       0 |     16 | b       | G           |
@@ -177,6 +180,7 @@ table available in CrateDB::
     | 1002 | _char                        |        0 |      18 |     -1 | b       | A           |
     | 1005 | _int2                        |        0 |      21 |     -1 | b       | A           |
     | 1007 | _int4                        |        0 |      23 |     -1 | b       | A           |
+    | 1008 | _regproc                     |        0 |      24 |     -1 | b       | A           |
     | 1015 | _varchar                     |        0 |    1043 |     -1 | b       | A           |
     | 1016 | _int8                        |        0 |      20 |     -1 | b       | A           |
     | 1017 | _point                       |        0 |     600 |     -1 | b       | A           |
@@ -189,18 +193,48 @@ table available in CrateDB::
     | 1185 | _timestamptz                 |        0 |    1184 |     -1 | b       | A           |
     | 1186 | interval                     |     1187 |       0 |     16 | b       | T           |
     | 1187 | _interval                    |        0 |    1186 |     -1 | b       | A           |
+    | 1266 | timetz                       |     1270 |       0 |     12 | b       | D           |
+    | 1270 | _timetz                      |        0 |    1266 |     -1 | b       | A           |
     | 2249 | record                       |     2287 |       0 |     -1 | p       | P           |
     | 2276 | any                          |        0 |       0 |      4 | p       | P           |
     | 2277 | anyarray                     |        0 |    2276 |     -1 | p       | P           |
     | 2287 | _record                      |        0 |    2249 |     -1 | p       | A           |
     +------+------------------------------+----------+---------+--------+---------+-------------+
-    SELECT 31 rows in set (... sec)
+    SELECT 35 rows in set (... sec)
 
 .. NOTE::
 
    This is just a snapshot of the table.
    Check table :ref:`information_schema.columns <information_schema_columns>`
    to get information for all supported columns.
+
+.. _postgres_pg_oid:
+
+Object Identifier Types
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Object identifiers are used internally by PostgreSQL for various system
+tables. The ``oid`` type is currently mapped to the :ref:`integer
+<data-type-numeric>` data type.
+
+The ``oid`` type might have the following type aliases:
+
++-------------+-------------+-----------------+---------+
+| Name        | Reference   | Description     | Example |
++=============+=============+=================+=========+
+| ``regproc`` | ``pg_proc`` | a function name | ``sum`` |
++-------------+-------------+-----------------+---------+
+
+.. NOTE::
+
+   Currently, casting a string or integer literal to the ``regproc`` type
+   wouldn't result in a function lookup.  Instead, casting the string
+   literal to the ``regproc`` type results in an object of the ``regproc``
+   type that has a name that corresponds to the string literal and the ``oid``
+   hash of the literal as ``oid`` and casting an integer literal to the
+   ``regproc`` type results in an object of the ``regproc`` type that has a
+   name that corresponds to the string representation of the literal and the
+   literal value as ``oid``.
 
 Show transaction isolation
 --------------------------
@@ -392,3 +426,5 @@ either because of the table is empty or by a not matching where clause.
 .. _pgsql_pg_database: https://www.postgresql.org/docs/10/static/catalog-pg-database.html
 .. _pgsql_pg_settings: https://www.postgresql.org/docs/10/view-pg-settings.html
 .. _pg_description: https://www.postgresql.org/docs/10/catalog-pg-description.html
+.. _pg_range: https://www.postgresql.org/docs/10/catalog-pg-range.html
+.. _pg_enum: https://www.postgresql.org/docs/10/catalog-pg-enum.html

@@ -22,7 +22,6 @@
 
 package io.crate.protocols.postgres;
 
-import com.google.common.annotations.VisibleForTesting;
 import io.crate.action.sql.DescribeResult;
 import io.crate.action.sql.ResultReceiver;
 import io.crate.action.sql.SQLOperations;
@@ -33,6 +32,7 @@ import io.crate.auth.AuthenticationMethod;
 import io.crate.auth.Protocol;
 import io.crate.auth.user.AccessControl;
 import io.crate.auth.user.User;
+import io.crate.common.annotations.VisibleForTesting;
 import io.crate.common.collections.Lists2;
 import io.crate.exceptions.SQLExceptions;
 import io.crate.expression.symbol.Symbol;
@@ -634,7 +634,7 @@ public class PostgresWireProtocol {
                 query,
                 channel,
                 SQLExceptions.forWireTransmission(getAccessControl.apply(session.sessionContext())),
-                outputTypes,
+                Lists2.map(outputTypes, PGTypes::get),
                 session.getResultFormatCodes(portalName)
             );
         }
@@ -717,7 +717,7 @@ public class PostgresWireProtocol {
                     query,
                     channel,
                     wrapError,
-                    Lists2.map(fields, Symbol::valueType),
+                    Lists2.map(fields, x -> PGTypes.get(x.valueType())),
                     null
                 );
                 session.execute("", 0, resultSetReceiver);
@@ -735,6 +735,10 @@ public class PostgresWireProtocol {
      * FrameDecoder that makes sure that a full message is in the buffer before delegating work to the MessageHandler
      */
     private class MessageDecoder extends ByteToMessageDecoder {
+
+        {
+            setCumulator(COMPOSITE_CUMULATOR);
+        }
 
         @Override
         protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {

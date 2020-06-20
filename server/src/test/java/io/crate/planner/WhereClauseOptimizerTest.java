@@ -82,7 +82,8 @@ public class WhereClauseOptimizerTest extends CrateDummyClusterServiceUnitTest{
             normalizer,
             queriedTable.where(),
             table.tableInfo(),
-            e.getPlannerContext(clusterService.state()).transactionContext()
+            e.getPlannerContext(clusterService.state()).transactionContext(),
+            e.functions()
         );
     }
 
@@ -104,7 +105,7 @@ public class WhereClauseOptimizerTest extends CrateDummyClusterServiceUnitTest{
     public void testFilterOnPartitionColumnAndPrimaryKeyResultsInDocKeys() {
         WhereClauseOptimizer.DetailedQuery query = optimize(
             "select * from parted_pk where id = 1 and date = 1395874800000");
-        assertThat(query.docKeys().toString(), is("Optional[DocKeys{1, 1395874800000}]"));
+        assertThat(query.docKeys().toString(), is("Optional[DocKeys{1, 1395874800000::bigint}]"));
         assertThat(query.partitions(), empty());
     }
 
@@ -152,6 +153,6 @@ public class WhereClauseOptimizerTest extends CrateDummyClusterServiceUnitTest{
     public void testFilterOnPKAndVersionResultsInDocKeys() {
         WhereClauseOptimizer.DetailedQuery query = optimize(
             "select * from bystring where name = 'foo' and _version = 2");
-        assertThat(query.docKeys().toString(), is("Optional[DocKeys{'foo', 2}]"));
+        assertThat(query.docKeys().toString(), is("Optional[DocKeys{'foo', 2::bigint}]"));
     }
 }
