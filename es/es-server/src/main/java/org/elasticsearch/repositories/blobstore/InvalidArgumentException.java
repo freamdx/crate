@@ -20,49 +20,13 @@
  * agreement.
  */
 
-package io.crate.data;
+package org.elasticsearch.repositories.blobstore;
 
-import java.util.Arrays;
+import org.elasticsearch.ElasticsearchException;
 
-public class RowN extends Row {
+public class InvalidArgumentException extends ElasticsearchException {
 
-    private final int size;
-    private Object[] cells;
-
-    public RowN(int size) {
-        this.size = size;
-    }
-
-    public RowN(Object ... cells) {
-        this(cells.length);
-        this.cells = cells;
-    }
-
-    @Override
-    public int numColumns() {
-        return size;
-    }
-
-    public void cells(Object[] cells) {
-        assert cells != null : "cells must not be null";
-        this.cells = cells;
-    }
-
-    @Override
-    public Object get(int index) {
-        assert cells != null : "cells must not be null";
-        return cells[index];
-    }
-
-    @Override
-    public Object[] materialize() {
-        Object[] result = new Object[size];
-        System.arraycopy(cells, 0, result, 0, size);
-        return result;
-    }
-
-    @Override
-    public String toString() {
-        return "RowN{" + Arrays.toString(cells) + '}';
+    public InvalidArgumentException(String message) {
+        super(message);
     }
 }

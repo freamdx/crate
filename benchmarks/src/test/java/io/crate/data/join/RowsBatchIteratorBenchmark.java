@@ -22,29 +22,16 @@
 
 package io.crate.data.join;
 
-import io.crate.breaker.RamAccountingContext;
-import io.crate.breaker.RowAccounting;
-import io.crate.breaker.RowAccountingWithEstimators;
-import io.crate.data.BatchIterator;
-import io.crate.data.BatchIterators;
-import io.crate.data.CloseAssertingBatchIterator;
-import io.crate.data.InMemoryBatchIterator;
-import io.crate.data.Input;
-import io.crate.data.Row;
-import io.crate.data.Row1;
-import io.crate.data.RowN;
-import io.crate.data.SkippingBatchIterator;
-import io.crate.execution.engine.collect.InputCollectExpression;
-import io.crate.execution.engine.join.HashInnerJoinBatchIterator;
-import io.crate.execution.engine.join.RamAccountingBatchIterator;
-import io.crate.execution.engine.window.WindowFunction;
-import io.crate.execution.engine.window.WindowFunctionBatchIterator;
-import io.crate.metadata.FunctionIdent;
-import io.crate.metadata.Functions;
-import io.crate.module.EnterpriseFunctionsModule;
-import io.crate.testing.RowGenerator;
-import io.crate.types.DataTypes;
-import io.crate.window.NthValueFunctions;
+import static io.crate.data.SentinelRow.SENTINEL;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.StreamSupport;
+
 import org.elasticsearch.common.breaker.NoopCircuitBreaker;
 import org.elasticsearch.common.inject.ModulesBuilder;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -56,15 +43,27 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.infra.Blackhole;
 
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-import java.util.stream.StreamSupport;
-
-import static io.crate.data.SentinelRow.SENTINEL;
+import io.crate.breaker.RamAccountingContext;
+import io.crate.breaker.RowAccounting;
+import io.crate.data.BatchIterator;
+import io.crate.data.BatchIterators;
+import io.crate.data.CloseAssertingBatchIterator;
+import io.crate.data.InMemoryBatchIterator;
+import io.crate.data.Input;
+import io.crate.data.Row;
+import io.crate.data.Row1;
+import io.crate.data.RowN;
+import io.crate.data.SkippingBatchIterator;
+import io.crate.execution.engine.collect.InputCollectExpression;
+import io.crate.execution.engine.join.HashInnerJoinBatchIterator;
+import io.crate.execution.engine.window.WindowFunction;
+import io.crate.execution.engine.window.WindowFunctionBatchIterator;
+import io.crate.metadata.FunctionIdent;
+import io.crate.metadata.Functions;
+import io.crate.module.EnterpriseFunctionsModule;
+import io.crate.testing.RowGenerator;
+import io.crate.types.DataTypes;
+import io.crate.window.NthValueFunctions;
 
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
@@ -74,7 +73,6 @@ public class RowsBatchIteratorBenchmark {
     private static NoopCircuitBreaker NOOP_CIRCUIT_BREAKER = new NoopCircuitBreaker("dummy");
 
     private final RamAccountingContext ramAccountingContext = new RamAccountingContext("test", NOOP_CIRCUIT_BREAKER);
-    private final RowAccountingWithEstimators rowAccounting = new RowAccountingWithEstimators(Collections.singleton(DataTypes.INTEGER), ramAccountingContext);
 
     // use materialize to not have shared row instances
     // this is done in the startup, otherwise the allocation costs will make up the majority of the benchmark.
@@ -142,7 +140,7 @@ public class RowsBatchIteratorBenchmark {
             InMemoryBatchIterator.of(tenThousandRows, SENTINEL, true),
             new CombinedRow(1, 1),
             () -> 1000,
-            new NoRowAccounting()
+            new NoRowAccounting<>()
         );
         while (crossJoin.moveNext()) {
             blackhole.consume(crossJoin.currentElement().get(0));
@@ -165,8 +163,9 @@ public class RowsBatchIteratorBenchmark {
     @Benchmark
     public void measureConsumeHashInnerJoin(Blackhole blackhole) {
         BatchIterator<Row> leftJoin = new HashInnerJoinBatchIterator(
-            new RamAccountingBatchIterator<>(InMemoryBatchIterator.of(oneThousandRows, SENTINEL, true), rowAccounting),
+            InMemoryBatchIterator.of(oneThousandRows, SENTINEL, true),
             InMemoryBatchIterator.of(tenThousandRows, SENTINEL, true),
+            new NoRowAccounting<>(),
             new CombinedRow(1, 1),
             row -> Objects.equals(row.get(0), row.get(1)),
             row -> Objects.hash(row.get(0)),
@@ -181,8 +180,9 @@ public class RowsBatchIteratorBenchmark {
     @Benchmark
     public void measureConsumeHashInnerJoinWithHashCollisions(Blackhole blackhole) {
         BatchIterator<Row> leftJoin = new HashInnerJoinBatchIterator(
-            new RamAccountingBatchIterator<>(InMemoryBatchIterator.of(oneThousandRows, SENTINEL, true), rowAccounting),
+            InMemoryBatchIterator.of(oneThousandRows, SENTINEL, true),
             InMemoryBatchIterator.of(tenThousandRows, SENTINEL, true),
+            new NoRowAccounting<>(),
             new CombinedRow(1, 1),
             row -> Objects.equals(row.get(0), row.get(1)),
             row -> {
@@ -204,7 +204,7 @@ public class RowsBatchIteratorBenchmark {
         InputCollectExpression input = new InputCollectExpression(0);
         BatchIterator<Row> batchIterator = WindowFunctionBatchIterator.of(
             new InMemoryBatchIterator<>(rows, SENTINEL, false),
-            new NoRowAccounting(),
+            new NoRowAccounting<>(),
             (partitionStart, partitionEnd, currentIndex, sortedRows) -> 0,
             (partitionStart, partitionEnd, currentIndex, sortedRows) -> currentIndex,
             (arg1, arg2) -> 0,
@@ -219,9 +219,10 @@ public class RowsBatchIteratorBenchmark {
         BatchIterators.collect(batchIterator, Collectors.summingInt(x -> { blackhole.consume(x); return 1; })).get();
     }
 
-    private static class NoRowAccounting implements RowAccounting<Row> {
+    private static class NoRowAccounting<T> implements RowAccounting<T> {
+
         @Override
-        public void accountForAndMaybeBreak(Row row) {
+        public void accountForAndMaybeBreak(T row) {
         }
 
         @Override
