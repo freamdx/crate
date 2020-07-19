@@ -38,8 +38,6 @@ import io.crate.expression.symbol.SymbolType;
 import io.crate.expression.symbol.Symbols;
 import io.crate.expression.symbol.WindowFunction;
 import io.crate.metadata.ColumnIdent;
-import io.crate.metadata.FunctionIdent;
-import io.crate.metadata.FunctionInfo;
 import io.crate.metadata.GeneratedReference;
 import io.crate.metadata.Reference;
 import io.crate.types.DataType;
@@ -103,7 +101,7 @@ public final class InputColumns extends DefaultTraversalSymbolVisitor<InputColum
             if (!symbolType.isValueSymbol()) {
                 DataType<?> valueType = input.valueType();
                 if ((symbolType == SymbolType.FUNCTION || symbolType == SymbolType.WINDOW_FUNCTION)
-                    && !((Function) input).info().isDeterministic()) {
+                    && !((Function) input).isDeterministic()) {
                     nonDeterministicFunctions.put(input, new InputColumn(i, valueType));
                 } else {
                     this.inputs.put(input, new InputColumn(i, valueType));
@@ -170,12 +168,12 @@ public final class InputColumns extends DefaultTraversalSymbolVisitor<InputColum
             return replacement;
         }
         ArrayList<Symbol> replacedFunctionArgs = getProcessedArgs(symbol.arguments(), sourceSymbols);
-        return new Function(symbol.info(), symbol.signature(), replacedFunctionArgs);
+        return new Function(symbol.signature(), replacedFunctionArgs, symbol.valueType());
     }
 
     @Nullable
     private static Symbol getFunctionReplacementOrNull(Function symbol, SourceSymbols sourceSymbols) {
-        if (symbol.info().isDeterministic()) {
+        if (symbol.isDeterministic()) {
             return sourceSymbols.inputs.get(symbol);
         } else {
             return sourceSymbols.nonDeterministicFunctions.get(symbol);
@@ -192,9 +190,9 @@ public final class InputColumns extends DefaultTraversalSymbolVisitor<InputColum
 
     @Override
     public Symbol visitWindowFunction(WindowFunction windowFunction, SourceSymbols sourceSymbols) {
-        Symbol replacement = getFunctionReplacementOrNull(windowFunction, sourceSymbols);
-        if (replacement != null) {
-            return replacement;
+        Symbol functionFromSource = getFunctionReplacementOrNull(windowFunction, sourceSymbols);
+        if (functionFromSource != null) {
+            return functionFromSource;
         }
         ArrayList<Symbol> replacedFunctionArgs = getProcessedArgs(windowFunction.arguments(), sourceSymbols);
         Symbol filterWithReplacedArgs;
@@ -205,11 +203,11 @@ public final class InputColumns extends DefaultTraversalSymbolVisitor<InputColum
             filterWithReplacedArgs = null;
         }
         return new WindowFunction(
-            windowFunction.info(),
             windowFunction.signature(),
             replacedFunctionArgs,
+            windowFunction.valueType(),
             filterWithReplacedArgs,
-            windowFunction.windowDefinition()
+            windowFunction.windowDefinition().map(x -> x.accept(this, sourceSymbols))
         );
     }
 
@@ -307,15 +305,12 @@ public final class InputColumns extends DefaultTraversalSymbolVisitor<InputColum
         List<String> path = column.path();
 
         List<Symbol> arguments = mapTail(rootIC, path, Literal::of);
-        List<DataType> argumentTypes = Symbols.typeView(arguments);
+        List<DataType<?>> argumentTypes = Symbols.typeView(arguments);
 
         return new Function(
-            new FunctionInfo(
-                new FunctionIdent(SubscriptObjectFunction.NAME, argumentTypes),
-                returnType
-            ),
             SubscriptObjectFunction.SIGNATURE,
-            arguments
+            arguments,
+            returnType
         );
     }
 

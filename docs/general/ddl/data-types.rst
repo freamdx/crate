@@ -448,7 +448,7 @@ equivalent to the SQL-conforming construct timestamp AT TIME ZONE zone.
 time with time zone
 -------------------
 
-The time type consist of time followed by an optional time zone.
+The time type consists of time followed by an optional time zone.
 
 ``timetz`` is an alias for `time with time zone`.
 
@@ -1195,6 +1195,18 @@ For more information, see PostgreSQL :ref:`postgres_pg_oid`.
 
 Casting a column of the ``regproc`` alias data type to ``text`` or
 ``integer`` results in a function name or its ``oid``, respectively.
+
+
+.. _oidvector_type:
+
+oidvector
+---------
+
+This is a system type used to represent one or more OID values.
+
+It looks similar to an array of integers, but doesn't support any of the scalar
+functions or expressions that can be used on regular arrays.
+
 
 .. _type_conversion:
 

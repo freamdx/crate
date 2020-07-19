@@ -24,36 +24,31 @@ package io.crate.metadata;
 import com.google.common.base.Objects;
 import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.Ordering;
+import io.crate.metadata.functions.Signature;
 import io.crate.types.DataType;
 import io.crate.types.DataTypes;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
 import org.elasticsearch.common.io.stream.Writeable;
 
-import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * @deprecated Use {@link Signature} instead. Exists only for BWC and will be removed with the next major version
+ */
 public final class FunctionIdent implements Comparable<FunctionIdent>, Writeable {
 
     private final FunctionName fqnName;
-    private final List<DataType> argumentTypes;
+    private final List<DataType<?>> argumentTypes;
 
-    public FunctionIdent(FunctionName functionName, List<DataType> argumentTypes) {
+    public FunctionIdent(FunctionName functionName, List<DataType<?>> argumentTypes) {
         this.fqnName = functionName;
         this.argumentTypes = argumentTypes;
     }
 
-    public FunctionIdent(@Nullable String schema, String name, List<DataType> argumentTypes) {
-        this(new FunctionName(schema, name), argumentTypes);
-    }
-
-    public FunctionIdent(String name, List<DataType> argumentTypes) {
-        this(null, name, argumentTypes);
-    }
-
-    public List<DataType> argumentTypes() {
+    public List<DataType<?>> argumentTypes() {
         return argumentTypes;
     }
 
@@ -96,7 +91,7 @@ public final class FunctionIdent implements Comparable<FunctionIdent>, Writeable
     public int compareTo(FunctionIdent o) {
         return ComparisonChain.start()
             .compare(fqnName, o.fqnName)
-            .compare(argumentTypes, o.argumentTypes, Ordering.<DataType>natural().lexicographical())
+            .compare(argumentTypes, o.argumentTypes, Ordering.<DataType<?>>natural().lexicographical())
             .result();
     }
 
@@ -114,7 +109,7 @@ public final class FunctionIdent implements Comparable<FunctionIdent>, Writeable
     public void writeTo(StreamOutput out) throws IOException {
         fqnName.writeTo(out);
         out.writeVInt(argumentTypes.size());
-        for (DataType argumentType : argumentTypes) {
+        for (DataType<?> argumentType : argumentTypes) {
             DataTypes.toStream(argumentType, out);
         }
     }

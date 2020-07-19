@@ -22,16 +22,13 @@
 
 package io.crate.metadata;
 
-import io.crate.common.collections.Lists2;
 import io.crate.expression.symbol.Aggregation;
 import io.crate.expression.symbol.Function;
 import io.crate.expression.symbol.Literal;
 import io.crate.expression.symbol.Symbol;
 import io.crate.metadata.functions.Signature;
 import io.crate.test.integration.CrateUnitTest;
-import io.crate.types.DataType;
 import io.crate.types.DataTypes;
-import io.crate.types.TypeSignature;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -51,7 +48,7 @@ public class FunctionsTest extends CrateUnitTest {
     private Map<FunctionName, List<FunctionProvider>> implementations = new HashMap<>();
 
     private void register(Signature signature,
-                          BiFunction<Signature, List<DataType>, FunctionImplementation> factory) {
+                          BiFunction<Signature, Signature, FunctionImplementation> factory) {
         List<FunctionProvider> functions = implementations.computeIfAbsent(
             signature.getName(),
             k -> new ArrayList<>());
@@ -63,33 +60,25 @@ public class FunctionsTest extends CrateUnitTest {
     }
 
     private FunctionImplementation resolve(String functionName,
-                                           List<? extends Symbol> arguments) {
+                                           List<Symbol> arguments) {
         return createFunctions().get(null, functionName, arguments, SearchPath.pathWithPGCatalogAndDoc());
     }
 
     private static class DummyFunction implements FunctionImplementation {
 
         private final Signature signature;
-        private final FunctionInfo info;
 
         public DummyFunction(Signature signature) {
             this.signature = signature;
-            this.info = new FunctionInfo(
-                new FunctionIdent(
-                    signature.getName(),
-                    Lists2.map(signature.getArgumentTypes(), TypeSignature::createType)
-                ),
-                signature.getReturnType().createType()
-            );
-        }
-
-        @Override
-        public FunctionInfo info() {
-            return info;
         }
 
         @Override
         public Signature signature() {
+            return signature;
+        }
+
+        @Override
+        public Signature boundSignature() {
             return signature;
         }
     }
@@ -99,7 +88,7 @@ public class FunctionsTest extends CrateUnitTest {
         var functions = createFunctions();
 
         expectedException.expect(UnsupportedOperationException.class);
-        expectedException.expectMessage("unknown function: does_not_exists()");
+        expectedException.expectMessage("Unknown function: does_not_exists()");
         functions.get(null, "does_not_exists", Collections.emptyList(), SearchPath.pathWithPGCatalogAndDoc());
     }
 
@@ -264,7 +253,7 @@ public class FunctionsTest extends CrateUnitTest {
                 dummyFunction
         );
 
-        var func = new Function(dummyFunction.info, null, List.of(Literal.of("hoschi")));
+        var func = new Function(dummyFunction.signature(), List.of(Literal.of("hoschi")), DataTypes.INTEGER);
         var funcImpl = createFunctions().getQualified(func, SearchPath.pathWithPGCatalogAndDoc());
 
         assertThat(funcImpl, is(dummyFunction));
@@ -285,9 +274,72 @@ public class FunctionsTest extends CrateUnitTest {
                 dummyFunction
         );
 
-        var agg = new Aggregation(dummyFunction.info, null, DataTypes.STRING, List.of(Literal.of("hoschi")));
+        var agg = new Aggregation(dummyFunction.signature, DataTypes.STRING, List.of(Literal.of("hoschi")));
         var funcImpl = createFunctions().getQualified(agg, SearchPath.pathWithPGCatalogAndDoc());
 
         assertThat(funcImpl, is(dummyFunction));
+    }
+
+    @Test
+    public void test_unknown_function_with_no_arguments_and_candidates() {
+        expectedException.expectMessage("Unknown function: foo.bar()");
+        Functions.raiseUnknownFunction("foo", "bar", List.of(), List.of());
+    }
+
+    @Test
+    public void test_unknown_function_with_arguments_no_candidates() {
+        expectedException.expectMessage("Unknown function: foo.bar(1, 2)");
+        Functions.raiseUnknownFunction("foo", "bar", List.of(Literal.of(1), Literal.of(2)), List.of());
+    }
+
+    @Test
+    public void test_unknown_function_no_arguments_but_candidates() {
+        expectedException.expectMessage("Unknown function: foo.bar()." +
+                                        " Possible candidates: foo.bar(text):text, foo.bar(double precision):double precision");
+        Functions.raiseUnknownFunction(
+            "foo",
+            "bar",
+            List.of(),
+            List.of(
+                new FunctionProvider(
+                    Signature.scalar(new FunctionName("foo", "bar"),
+                                     DataTypes.STRING.getTypeSignature(),
+                                     DataTypes.STRING.getTypeSignature()),
+                    ((signature, dataTypes) -> null)
+                ),
+                new FunctionProvider(
+                    Signature.scalar(new FunctionName("foo", "bar"),
+                                     DataTypes.DOUBLE.getTypeSignature(),
+                                     DataTypes.DOUBLE.getTypeSignature()),
+                    ((signature, dataTypes) -> null)
+                )
+            )
+        );
+    }
+
+    @Test
+    public void test_unknown_function_with_arguments_and_candidates() {
+        expectedException.expectMessage("Unknown function: foo.bar(1, 2)," +
+                                        " no overload found for matching argument types: (integer, integer)." +
+                                        " Possible candidates: foo.bar(text):text, foo.bar(double precision):double precision");
+        Functions.raiseUnknownFunction(
+            "foo",
+            "bar",
+            List.of(Literal.of(1), Literal.of(2)),
+            List.of(
+                new FunctionProvider(
+                    Signature.scalar(new FunctionName("foo", "bar"),
+                                     DataTypes.STRING.getTypeSignature(),
+                                     DataTypes.STRING.getTypeSignature()),
+                    ((signature, dataTypes) -> null)
+                ),
+                new FunctionProvider(
+                    Signature.scalar(new FunctionName("foo", "bar"),
+                                     DataTypes.DOUBLE.getTypeSignature(),
+                                     DataTypes.DOUBLE.getTypeSignature()),
+                    ((signature, dataTypes) -> null)
+                )
+            )
+        );
     }
 }

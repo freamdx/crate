@@ -44,6 +44,7 @@ import io.crate.analyze.AnalyzedCreateUser;
 import io.crate.analyze.AnalyzedDeallocate;
 import io.crate.analyze.AnalyzedDecommissionNode;
 import io.crate.analyze.AnalyzedDeleteStatement;
+import io.crate.analyze.AnalyzedDiscard;
 import io.crate.analyze.AnalyzedDropAnalyzer;
 import io.crate.analyze.AnalyzedDropFunction;
 import io.crate.analyze.AnalyzedDropRepository;
@@ -65,6 +66,7 @@ import io.crate.analyze.AnalyzedResetStatement;
 import io.crate.analyze.AnalyzedRestoreSnapshot;
 import io.crate.analyze.AnalyzedSetLicenseStatement;
 import io.crate.analyze.AnalyzedSetStatement;
+import io.crate.analyze.AnalyzedSetTransaction;
 import io.crate.analyze.AnalyzedShowCreateTable;
 import io.crate.analyze.AnalyzedStatement;
 import io.crate.analyze.AnalyzedStatementVisitor;
@@ -468,15 +470,18 @@ public class Planner extends AnalyzedStatementVisitor<PlannerContext, Plan> {
                     "SET LOCAL `{}` statement will be ignored. " +
                     "CrateDB has no transactions, so any `SET LOCAL` change would be dropped in the next statement.", setStatement.settings());
                 return NoopPlan.INSTANCE;
-            case SESSION_TRANSACTION_MODE:
-                LOGGER.info("'SET SESSION CHARACTERISTICS AS TRANSACTION' statement will be ignored.");
-                return NoopPlan.INSTANCE;
             case SESSION:
                 return new SetSessionPlan(setStatement.settings(), sessionSettingRegistry);
             case GLOBAL:
             default:
                 return new UpdateSettingsPlan(setStatement.settings(), setStatement.isPersistent());
         }
+    }
+
+    @Override
+    public Plan visitSetTransaction(AnalyzedSetTransaction setTransaction, PlannerContext context) {
+        LOGGER.info("'SET TRANSACTION' statement is ignored. CrateDB doesn't support transactions");
+        return NoopPlan.INSTANCE;
     }
 
     @Override
@@ -491,6 +496,11 @@ public class Planner extends AnalyzedStatementVisitor<PlannerContext, Plan> {
 
     @Override
     public Plan visitDeallocateAnalyzedStatement(AnalyzedDeallocate analysis, PlannerContext context) {
+        return NoopPlan.INSTANCE;
+    }
+
+    @Override
+    public Plan visitDiscard(AnalyzedDiscard discard, PlannerContext context) {
         return NoopPlan.INSTANCE;
     }
 

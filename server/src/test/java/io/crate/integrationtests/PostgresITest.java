@@ -263,8 +263,6 @@ public class PostgresITest extends SQLTransportIntegrationTest {
                 statement.executeUpdate("refresh table t");
             }
 
-            // Because our ReadyForQuery messages always sends transaction-status IDLE, rollback and commit don't do anything
-            conn.rollback();
             conn.commit();
 
             try (Statement statement = conn.createStatement()) {
@@ -876,6 +874,33 @@ public class PostgresITest extends SQLTransportIntegrationTest {
     public void test_proper_termination_of_deallocate_through_http_call() throws Exception {
        execute("DEALLOCATE ALL");
        assertThat(response.rowCount(), is (0L));
+    }
+
+    @Test
+    public void test_getProcedureColumns() throws Exception {
+        try (Connection conn = DriverManager.getConnection(url(RW))) {
+            var results = conn.getMetaData().getProcedureColumns("", "", "", "");
+            assertThat(results.next(), is(true));
+            assertThat(results.getString(3), is("_pg_expandarray"));
+        }
+    }
+
+    @Test
+    public void test_each_non_array_pg_type_entry_can_be_joined_with_pg_proc() throws Exception {
+        try (Connection conn = DriverManager.getConnection(url(RW))) {
+            PreparedStatement stmt = conn.prepareStatement(
+                "SELECT pg_type.oid, pg_type.typname, pg_proc.proname " +
+                "FROM pg_catalog.pg_type LEFT OUTER JOIN pg_catalog.pg_proc ON pg_proc.oid = pg_type.typreceive " +
+                "WHERE pg_type.typarray <> 0");
+            ResultSet result = stmt.executeQuery();
+            while (result.next()) {
+                assertThat(
+                    "There must be an entry for `" + result.getInt(1) + "/" + result.getString(2) + "` in pg_proc",
+                    result.getString(3),
+                    Matchers.notNullValue(String.class)
+                );
+            }
+        }
     }
 
     private void assertSelectNameFromSysClusterWorks(Connection conn) throws SQLException {

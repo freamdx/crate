@@ -23,16 +23,20 @@ package io.crate.types;
 
 import io.crate.Streamer;
 import io.crate.protocols.postgres.parser.PgArrayParser;
+import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
+import org.elasticsearch.common.xcontent.XContentFactory;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -84,8 +88,9 @@ public class ArrayType<T> extends DataType<List<T>> {
         return streamer;
     }
 
+    @SuppressWarnings("unchecked")
     public ArrayType(StreamInput in) throws IOException {
-        innerType = DataTypes.fromStream(in);
+        innerType = (DataType<T>) DataTypes.fromStream(in);
     }
 
     @Override
@@ -127,6 +132,55 @@ public class ArrayType<T> extends DataType<List<T>> {
         return convert(value, innerType::value);
     }
 
+    public List<String> fromAnyArray(Object[] values) throws IllegalArgumentException {
+        if (values == null) {
+            return null;
+        } else {
+            ArrayList<String> array = new ArrayList<>(values.length);
+            for (var value : values) {
+                array.add(anyValueToString(value));
+            }
+            return array;
+        }
+    }
+
+    public List<String> fromAnyArray(List<?> values) throws IllegalArgumentException {
+        if (values == null) {
+            return null;
+        } else {
+            ArrayList<String> array = new ArrayList<>(values.size());
+            for (var value : values) {
+                array.add(anyValueToString(value));
+            }
+            return array;
+        }
+    }
+
+    private String anyValueToString(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            if (value instanceof Map) {
+                //noinspection unchecked
+                return
+                    Strings.toString(
+                        XContentFactory.jsonBuilder().map((Map<String, ?>) value));
+            } else if (value instanceof Collection) {
+                var array = XContentFactory.jsonBuilder().startArray();
+                for (var element : (Collection<?>) value) {
+                    array.value(element);
+                }
+                array.endArray();
+                return Strings.toString(array);
+            } else {
+                return value.toString();
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
     @Nullable
     private static <T> List<T> convert(@Nullable Object value, Function<Object, T> innerType) {
         if (value == null) {
@@ -134,7 +188,7 @@ public class ArrayType<T> extends DataType<List<T>> {
         }
         ArrayList<T> result;
         if (value instanceof Collection) {
-            Collection values = (Collection) value;
+            Collection<?> values = (Collection<?>) value;
             result = new ArrayList<>(values.size());
             for (Object o : values) {
                 result.add(innerType.apply(o));

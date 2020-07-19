@@ -22,8 +22,26 @@
 
 package io.crate.action.sql;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
+
+import javax.annotation.Nullable;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.elasticsearch.cluster.ClusterState;
+import org.elasticsearch.common.Randomness;
+
 import io.crate.analyze.AnalyzedBegin;
+import io.crate.analyze.AnalyzedCommit;
 import io.crate.analyze.AnalyzedDeallocate;
+import io.crate.analyze.AnalyzedDiscard;
 import io.crate.analyze.AnalyzedStatement;
 import io.crate.analyze.Analyzer;
 import io.crate.analyze.ParamTypeHints;
@@ -52,23 +70,11 @@ import io.crate.protocols.postgres.FormatCodes;
 import io.crate.protocols.postgres.JobsLogsUpdateListener;
 import io.crate.protocols.postgres.Portal;
 import io.crate.protocols.postgres.RetryOnFailureResultReceiver;
+import io.crate.protocols.postgres.TransactionState;
 import io.crate.sql.parser.SqlParser;
+import io.crate.sql.tree.DiscardStatement.Target;
 import io.crate.sql.tree.Statement;
 import io.crate.types.DataType;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import org.elasticsearch.cluster.ClusterState;
-import org.elasticsearch.common.Randomness;
-
-import javax.annotation.Nullable;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.function.Function;
 
 /**
  * Stateful Session
@@ -119,11 +125,17 @@ public class Session implements AutoCloseable {
     @VisibleForTesting
     final Map<Statement, List<DeferredExecution>> deferredExecutionsByStmt = new HashMap<>();
 
+    @VisibleForTesting
+    @Nullable
+    CompletableFuture<?> activeExecution;
+
     private final Analyzer analyzer;
     private final Planner planner;
     private final JobsLogs jobsLogs;
     private final boolean isReadOnly;
     private final ParameterTypeExtractor parameterTypeExtractor;
+
+    private TransactionState currentTransactionState = TransactionState.IDLE;
 
     public Session(Analyzer analyzer,
                    Planner planner,
@@ -145,7 +157,7 @@ public class Session implements AutoCloseable {
     /**
      * See {@link #quickExec(String, Function, ResultReceiver, Row)}
      */
-    public void quickExec(String statement, ResultReceiver resultReceiver, Row params) {
+    public void quickExec(String statement, ResultReceiver<?> resultReceiver, Row params) {
         quickExec(statement, SqlParser::createStatement, resultReceiver, params);
     }
 
@@ -156,7 +168,7 @@ public class Session implements AutoCloseable {
      * @param parse A function to parse the statement; This can be used to cache the parsed statement.
      *              Use {@link #quickExec(String, ResultReceiver, Row)} to use the regular parser
      */
-    public void quickExec(String statement, Function<String, Statement> parse, ResultReceiver resultReceiver, Row params) {
+    public void quickExec(String statement, Function<String, Statement> parse, ResultReceiver<?> resultReceiver, Row params) {
         CoordinatorTxnCtx txnCtx = new CoordinatorTxnCtx(sessionContext);
         Statement parsedStmt = parse.apply(statement);
         AnalyzedStatement analyzedStatement = analyzer.analyze(parsedStmt, sessionContext, ParamTypeHints.EMPTY);
@@ -187,9 +199,9 @@ public class Session implements AutoCloseable {
             resultReceiver = new RetryOnFailureResultReceiver(
                 executor.clusterService(),
                 clusterState,
-                // not using planner.currentClusterState().metaData()::hasIndex to make sure the *current*
+                // not using planner.currentClusterState().metadata()::hasIndex to make sure the *current*
                 // clusterState at the time of the index check is used
-                indexName -> clusterState.metaData().hasIndex(indexName),
+                indexName -> clusterState.metadata().hasIndex(indexName),
                 resultReceiver,
                 jobId,
                 (newJobId, retryResultReceiver) -> retryQuery(
@@ -349,7 +361,8 @@ public class Session implements AutoCloseable {
         }
     }
 
-    public void execute(String portalName, int maxRows, ResultReceiver resultReceiver) {
+    @Nullable
+    public CompletableFuture<?> execute(String portalName, int maxRows, ResultReceiver<?> resultReceiver) {
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("method=execute portalName={} maxRows={}", portalName, maxRows);
         }
@@ -359,7 +372,12 @@ public class Session implements AutoCloseable {
             throw new ReadOnlyException(portal.preparedStmt().rawStatement());
         }
         if (analyzedStmt instanceof AnalyzedBegin) {
+            currentTransactionState = TransactionState.IN_TRANSACTION;
             resultReceiver.allFinished(false);
+        } else if (analyzedStmt instanceof AnalyzedCommit) {
+            currentTransactionState = TransactionState.IDLE;
+            resultReceiver.allFinished(false);
+            return resultReceiver.completionFuture();
         } else if (analyzedStmt instanceof AnalyzedDeallocate) {
             String stmtToDeallocate = ((AnalyzedDeallocate) analyzedStmt).preparedStmtName();
             if (stmtToDeallocate != null) {
@@ -371,7 +389,15 @@ public class Session implements AutoCloseable {
                 preparedStatements.clear();
             }
             resultReceiver.allFinished(false);
-        } else {
+        } else if (analyzedStmt instanceof AnalyzedDiscard) {
+            AnalyzedDiscard discard = (AnalyzedDiscard) analyzedStmt;
+            // We don't cache plans, don't have sequences or temporary tables
+            // See https://www.postgresql.org/docs/current/sql-discard.html
+            if (discard.target() == Target.ALL) {
+                close();
+            }
+            resultReceiver.allFinished(false);
+        } else if (analyzedStmt.isWriteOperation()) {
             /* We defer the execution for any other statements to `sync` messages so that we can efficiently process
              * bulk operations. E.g. If we receive `INSERT INTO (x) VALUES (?)` bindings/execute multiple times
              * We want to create bulk requests internally:                                                          /
@@ -398,31 +424,45 @@ public class Session implements AutoCloseable {
                     }
                 }
             );
+        } else {
+            if (!deferredExecutionsByStmt.isEmpty()) {
+                throw new UnsupportedOperationException(
+                    "Only write operations are allowed in Batch statements");
+            }
+            if (activeExecution == null) {
+                activeExecution = singleExec(portal, resultReceiver, maxRows);
+            } else {
+                activeExecution = activeExecution
+                    .thenCompose(ignored -> singleExec(portal, resultReceiver, maxRows));
+            }
+            return activeExecution;
         }
+        return null;
     }
 
     public CompletableFuture<?> sync() {
+        if (activeExecution == null) {
+            return triggerDeferredExecutions();
+        } else {
+            var result = activeExecution;
+            activeExecution = null;
+            return result;
+        }
+    }
+
+    private CompletableFuture<?> triggerDeferredExecutions() {
         switch (deferredExecutionsByStmt.size()) {
             case 0:
                 LOGGER.debug("method=sync deferredExecutions=0");
                 return CompletableFuture.completedFuture(null);
-
             case 1: {
                 var entry = deferredExecutionsByStmt.entrySet().iterator().next();
                 deferredExecutionsByStmt.clear();
                 return exec(entry.getKey(), entry.getValue());
             }
-
             default: {
-                Map<Statement, List<DeferredExecution>> deferredExecutions = Map.copyOf(this.deferredExecutionsByStmt);
-                this.deferredExecutionsByStmt.clear();
-                for (var entry : deferredExecutions.entrySet()) {
-                    if (entry.getValue().stream().anyMatch(x -> !x.portal().analyzedStatement().isWriteOperation())) {
-                        throw new UnsupportedOperationException(
-                            "Only write operations are allowed in Batch statements");
-                    }
-                }
-                var futures = Lists2.map(deferredExecutions.entrySet(), x -> exec(x.getKey(), x.getValue()));
+                var futures = Lists2.map(deferredExecutionsByStmt.entrySet(), x -> exec(x.getKey(), x.getValue()));
+                deferredExecutionsByStmt.clear();
                 return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
             }
         }
@@ -511,7 +551,8 @@ public class Session implements AutoCloseable {
         jobsLogs.logExecutionEnd(jobId, null);
     }
 
-    private CompletableFuture<?> singleExec(Portal portal, ResultReceiver<?> resultReceiver, int maxRows) {
+    @VisibleForTesting
+    CompletableFuture<?> singleExec(Portal portal, ResultReceiver<?> resultReceiver, int maxRows) {
         var activeConsumer = portal.activeConsumer();
         if (activeConsumer != null && activeConsumer.suspended()) {
             activeConsumer.replaceResultReceiver(resultReceiver, maxRows);
@@ -544,7 +585,7 @@ public class Session implements AutoCloseable {
             resultReceiver = new RetryOnFailureResultReceiver(
                 executor.clusterService(),
                 clusterState,
-                indexName -> executor.clusterService().state().metaData().hasIndex(indexName),
+                indexName -> executor.clusterService().state().metadata().hasIndex(indexName),
                 resultReceiver,
                 jobId,
                 (newJobId, resultRec) -> retryQuery(
@@ -654,7 +695,9 @@ public class Session implements AutoCloseable {
 
     @Override
     public void close() {
+        currentTransactionState = TransactionState.IDLE;
         resetDeferredExecutions();
+        activeExecution = null;
         for (Portal portal : portals.values()) {
             portal.closeActiveConsumer();
         }
@@ -674,5 +717,9 @@ public class Session implements AutoCloseable {
             }
         }
         deferredExecutionsByStmt.clear();
+    }
+
+    public TransactionState transactionState() {
+        return currentTransactionState;
     }
 }

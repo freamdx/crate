@@ -24,7 +24,7 @@ package io.crate.execution.engine.collect.sources;
 import io.crate.execution.engine.collect.files.SqlFeatureContext;
 import io.crate.execution.engine.collect.files.SqlFeatures;
 import io.crate.expression.reference.information.ColumnContext;
-import io.crate.expression.udf.UserDefinedFunctionsMetaData;
+import io.crate.expression.udf.UserDefinedFunctionsMetadata;
 import io.crate.metadata.ColumnIdent;
 import io.crate.metadata.FulltextAnalyzerResolver;
 import io.crate.metadata.FunctionProvider;
@@ -39,6 +39,7 @@ import io.crate.metadata.RoutineInfo;
 import io.crate.metadata.RoutineInfos;
 import io.crate.metadata.Schemas;
 import io.crate.metadata.blob.BlobSchemaInfo;
+import io.crate.metadata.functions.Signature;
 import io.crate.metadata.information.InformationSchemaInfo;
 import io.crate.metadata.pgcatalog.OidHash;
 import io.crate.metadata.pgcatalog.PgCatalogSchemaInfo;
@@ -50,10 +51,13 @@ import io.crate.metadata.table.ConstraintInfo;
 import io.crate.metadata.table.SchemaInfo;
 import io.crate.metadata.table.TableInfo;
 import io.crate.metadata.view.ViewInfo;
+import io.crate.protocols.postgres.types.PGType;
+import io.crate.protocols.postgres.types.PGTypes;
+import io.crate.types.ArrayType;
 import io.crate.types.DataTypes;
 import org.elasticsearch.cluster.ClusterChangedEvent;
 import org.elasticsearch.cluster.ClusterStateListener;
-import org.elasticsearch.cluster.metadata.MetaData;
+import org.elasticsearch.cluster.metadata.Metadata;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.inject.Inject;
 
@@ -95,6 +99,7 @@ public class InformationSchemaIterables implements ClusterStateListener {
     private final Iterable<PgIndexTable.Entry> pgIndices;
     private final Iterable<PgClassTable.Entry> pgClasses;
     private final Iterable<PgProcTable.Entry> pgBuiltInFunc;
+    private final Iterable<PgProcTable.Entry> pgTypeReceiveFunctions;
     private final Functions functions;
     private final FulltextAnalyzerResolver fulltextAnalyzerResolver;
 
@@ -105,7 +110,7 @@ public class InformationSchemaIterables implements ClusterStateListener {
     public InformationSchemaIterables(final Schemas schemas,
                                       final Functions functions,
                                       FulltextAnalyzerResolver fulltextAnalyzerResolver,
-                                      ClusterService clusterService) throws IOException {
+                                      ClusterService clusterService) {
         this.schemas = schemas;
         this.functions = functions;
         this.fulltextAnalyzerResolver = fulltextAnalyzerResolver;
@@ -157,7 +162,39 @@ public class InformationSchemaIterables implements ClusterStateListener {
             .flatMap(List::stream)
             .map(this::pgProc)
             .iterator();
+
+        pgTypeReceiveFunctions = () ->
+            Stream.concat(
+                sequentialStream(PGTypes.pgTypes())
+                    .filter(t -> t.typArray() != 0)
+                    .map(InformationSchemaIterables::typeToSignature)
+                    .map(PgProcTable.Entry::of),
+
+                // Don't generate array_recv entry from pgTypes to avoid duplicate entries
+                // (We want 1 array_recv entry, not one per array type)
+                Stream.of(
+                    PgProcTable.Entry.of(
+                        Signature.scalar(
+                            "array_recv",
+                            DataTypes.INTEGER.getTypeSignature(),
+                            new ArrayType<>(DataTypes.UNDEFINED).getTypeSignature()
+                        )
+                    )
+                )
+            )
+            .iterator();
     }
+
+    private static Signature typeToSignature(PGType<?> type) {
+        return Signature.scalar(
+            type.typReceive().name(),
+            Objects.requireNonNullElse(
+                PGTypes.fromOID(type.oid()),
+                DataTypes.UNDEFINED
+            ).getTypeSignature()
+        );
+    }
+
 
     private boolean isPrimaryKey(RelationInfo relationInfo) {
         return (relationInfo.primaryKey().size() > 1 ||
@@ -277,10 +314,13 @@ public class InformationSchemaIterables implements ClusterStateListener {
 
     public Iterable<PgProcTable.Entry> pgProc() {
         return () -> concat(
-            sequentialStream(pgBuiltInFunc),
-            sequentialStream(functions.udfFunctionResolvers().values())
-                .flatMap(List::stream)
-                .map(this::pgProc)
+            concat(
+                sequentialStream(pgBuiltInFunc),
+                sequentialStream(functions.udfFunctionResolvers().values())
+                    .flatMap(List::stream)
+                    .map(this::pgProc)
+            ),
+            sequentialStream(pgTypeReceiveFunctions)
         ).iterator();
     }
 
@@ -304,20 +344,20 @@ public class InformationSchemaIterables implements ClusterStateListener {
     @Override
     public void clusterChanged(ClusterChangedEvent event) {
         if (initialClusterStateReceived) {
-            Set<String> changedCustomMetaDataSet = event.changedCustomMetaDataSet();
-            if (changedCustomMetaDataSet.contains(UserDefinedFunctionsMetaData.TYPE) == false) {
+            Set<String> changedCustomMetadataSet = event.changedCustomMetadataSet();
+            if (changedCustomMetadataSet.contains(UserDefinedFunctionsMetadata.TYPE) == false) {
                 return;
             }
-            createMetaDataBasedIterables(event.state().getMetaData());
+            createMetadataBasedIterables(event.state().getMetadata());
         } else {
             initialClusterStateReceived = true;
-            createMetaDataBasedIterables(event.state().getMetaData());
+            createMetadataBasedIterables(event.state().getMetadata());
         }
     }
 
-    private void createMetaDataBasedIterables(MetaData metaData) {
+    private void createMetadataBasedIterables(Metadata metadata) {
         RoutineInfos routineInfos = new RoutineInfos(fulltextAnalyzerResolver,
-            metaData.custom(UserDefinedFunctionsMetaData.TYPE));
+            metadata.custom(UserDefinedFunctionsMetadata.TYPE));
         routines = () -> sequentialStream(routineInfos).filter(Objects::nonNull).iterator();
     }
 

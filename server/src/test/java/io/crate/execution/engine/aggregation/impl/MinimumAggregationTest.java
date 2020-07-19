@@ -21,28 +21,15 @@
 
 package io.crate.execution.engine.aggregation.impl;
 
-import io.crate.metadata.FunctionImplementation;
-import io.crate.metadata.functions.Signature;
 import io.crate.operation.aggregation.AggregationTest;
 import io.crate.types.DataType;
 import io.crate.types.DataTypes;
 import org.junit.Test;
 
-import java.util.List;
-
 public class MinimumAggregationTest extends AggregationTest {
 
-    private Object executeAggregation(DataType dataType, Object[][] data) throws Exception {
+    private Object executeAggregation(DataType<?> dataType, Object[][] data) throws Exception {
         return executeAggregation("min", dataType, data);
-    }
-
-    @Test
-    public void testReturnType() throws Exception {
-        FunctionImplementation min = functions.getQualified(
-            Signature.aggregate("min", DataTypes.INTEGER.getTypeSignature(), DataTypes.INTEGER.getTypeSignature()),
-            List.of(DataTypes.INTEGER)
-        );
-        assertEquals(DataTypes.INTEGER, min.info().returnType());
     }
 
     @Test
@@ -90,7 +77,8 @@ public class MinimumAggregationTest extends AggregationTest {
     @Test
     public void testUnsupportedType() throws Exception {
         expectedException.expect(UnsupportedOperationException.class);
-        expectedException.expectMessage("unknown function: min(object)");
+        expectedException.expectMessage("Unknown function: min(INPUT(0))," +
+                                        " no overload found for matching argument types: (object).");
         executeAggregation(DataTypes.UNTYPED_OBJECT, new Object[][]{{new Object()}});
     }
 }

@@ -38,8 +38,8 @@ import io.crate.types.TypeSignature;
 import java.util.ArrayList;
 import java.util.Set;
 
-import static io.crate.metadata.FunctionInfo.Type.AGGREGATE;
-import static io.crate.metadata.FunctionInfo.Type.WINDOW;
+import static io.crate.metadata.FunctionType.AGGREGATE;
+import static io.crate.metadata.FunctionType.WINDOW;
 import static io.crate.metadata.pgcatalog.PgProcTable.Entry.pgTypeIdFrom;
 import static io.crate.types.DataTypes.BOOLEAN;
 import static io.crate.types.DataTypes.FLOAT;
@@ -85,7 +85,7 @@ public class PgProcTable {
             .add("pronargs", SHORT, x -> (short) x.signature.getArgumentTypes().size())
             .add("pronargdefaults", SHORT, x -> null)
             .add("prorettype", INTEGER, x -> x.returnTypeId)
-            .add("proargtypes", INTEGER_ARRAY, x ->
+            .add("proargtypes", DataTypes.OIDVECTOR, x ->
                 Lists2.map(x.signature.getArgumentTypes(), Entry::pgTypeIdFrom))
             .add("proallargtypes", INTEGER_ARRAY, x -> null)
             .add("proargmodes", STRING_ARRAY, x -> {

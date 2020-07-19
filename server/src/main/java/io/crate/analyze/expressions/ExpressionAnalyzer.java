@@ -22,7 +22,32 @@
 
 package io.crate.analyze.expressions;
 
+import static io.crate.sql.tree.IntervalLiteral.IntervalField.DAY;
+import static io.crate.sql.tree.IntervalLiteral.IntervalField.HOUR;
+import static io.crate.sql.tree.IntervalLiteral.IntervalField.MINUTE;
+import static io.crate.sql.tree.IntervalLiteral.IntervalField.MONTH;
+import static io.crate.sql.tree.IntervalLiteral.IntervalField.SECOND;
+import static io.crate.sql.tree.IntervalLiteral.IntervalField.YEAR;
+import static java.util.stream.Collectors.toList;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
+
 import com.google.common.collect.Lists;
+
+import org.joda.time.Period;
+
 import io.crate.action.sql.Option;
 import io.crate.analyze.DataTypeAnalyzer;
 import io.crate.analyze.FrameBoundDefinition;
@@ -59,6 +84,7 @@ import io.crate.expression.scalar.arithmetic.MapFunction;
 import io.crate.expression.scalar.arithmetic.NegateFunctions;
 import io.crate.expression.scalar.cast.CastMode;
 import io.crate.expression.scalar.conditional.IfFunction;
+import io.crate.expression.scalar.timestamp.CurrentTimeFunction;
 import io.crate.expression.scalar.timestamp.CurrentTimestampFunction;
 import io.crate.expression.symbol.Function;
 import io.crate.expression.symbol.Literal;
@@ -69,9 +95,8 @@ import io.crate.expression.symbol.Symbols;
 import io.crate.expression.symbol.WindowFunction;
 import io.crate.interval.IntervalParser;
 import io.crate.metadata.CoordinatorTxnCtx;
-import io.crate.metadata.FunctionIdent;
 import io.crate.metadata.FunctionImplementation;
-import io.crate.metadata.FunctionInfo;
+import io.crate.metadata.FunctionType;
 import io.crate.metadata.Functions;
 import io.crate.metadata.Reference;
 import io.crate.metadata.RelationName;
@@ -131,29 +156,6 @@ import io.crate.types.ArrayType;
 import io.crate.types.DataType;
 import io.crate.types.DataTypes;
 import io.crate.types.UndefinedType;
-import org.joda.time.Period;
-
-import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
-import static io.crate.sql.tree.IntervalLiteral.IntervalField.DAY;
-import static io.crate.sql.tree.IntervalLiteral.IntervalField.HOUR;
-import static io.crate.sql.tree.IntervalLiteral.IntervalField.MINUTE;
-import static io.crate.sql.tree.IntervalLiteral.IntervalField.MONTH;
-import static io.crate.sql.tree.IntervalLiteral.IntervalField.SECOND;
-import static io.crate.sql.tree.IntervalLiteral.IntervalField.YEAR;
-import static java.util.stream.Collectors.toList;
 
 /**
  * <p>This Analyzer can be used to convert Expression from the SQL AST into symbols.</p>
@@ -221,7 +223,7 @@ public class ExpressionAnalyzer {
         var symbol = expression.accept(innerAnalyzer, expressionAnalysisContext);
         var normalizer = EvaluatingNormalizer.functionOnlyNormalizer(
             functions,
-            f -> expressionAnalysisContext.isEagerNormalizationAllowed() && f.info().isDeterministic()
+            f -> expressionAnalysisContext.isEagerNormalizationAllowed() && f.isDeterministic()
         );
         return normalizer.normalize(symbol, coordinatorTxnCtx);
     }
@@ -399,7 +401,7 @@ public class ExpressionAnalyzer {
      * @param targetTypes A list of {@link DataType}s to use as the new type of symbolsToCast.
      * @return A new list with the casted symbols.
      */
-    private static List<Symbol> cast(List<Symbol> symbolsToCast, List<DataType> targetTypes) {
+    private static List<Symbol> cast(List<Symbol> symbolsToCast, List<DataType<?>> targetTypes) {
         if (symbolsToCast.size() != targetTypes.size()) {
             throw new IllegalStateException("Given symbol list has to match the target type list.");
         }
@@ -459,13 +461,23 @@ public class ExpressionAnalyzer {
 
         @Override
         protected Symbol visitCurrentTime(CurrentTime node, ExpressionAnalysisContext context) {
-            if (!node.getType().equals(CurrentTime.Type.TIMESTAMP)) {
-                visitExpression(node, context);
+            String funcName = CurrentTimestampFunction.NAME;
+            switch (node.getType()) {
+                case TIMESTAMP:
+                    break;
+
+                case TIME:
+                    funcName = CurrentTimeFunction.NAME;
+                    break;
+
+                default:
+                    visitExpression(node, context);
             }
-            List<Symbol> args = List.of(
-                Literal.of(node.getPrecision().orElse(CurrentTimestampFunction.DEFAULT_PRECISION))
-            );
-            return allocateFunction(CurrentTimestampFunction.NAME, args, context);
+            Optional p = node.getPrecision();
+            return allocateFunction(
+                funcName,
+                p.isPresent() ? List.of(Literal.ofUnchecked(DataTypes.INTEGER, p.get())) : List.of(),
+                context);
         }
 
         @Override
@@ -741,8 +753,7 @@ public class ExpressionAnalyzer {
 
             Comparison comparison = new Comparison(functions, coordinatorTxnCtx, node.getType(), left, right);
             comparison.normalize(context);
-            FunctionIdent ident = comparison.toFunctionIdent();
-            return allocateFunction(ident.name(), comparison.arguments(), context);
+            return allocateFunction(comparison.operatorName, comparison.arguments(), context);
         }
 
         @Override
@@ -993,18 +1004,19 @@ public class ExpressionAnalyzer {
             Symbol max = node.getMax().accept(this, context);
 
             Comparison gte = new Comparison(functions, coordinatorTxnCtx, ComparisonExpression.Type.GREATER_THAN_OR_EQUAL, value, min);
-            FunctionIdent gteIdent = gte.normalize(context).toFunctionIdent();
+            Comparison normalizedGte = gte.normalize(context);
             Symbol gteFunc = allocateFunction(
-                gteIdent.name(),
-                gte.arguments(),
-                context);
-
+                normalizedGte.operatorName,
+                normalizedGte.arguments(),
+                context
+            );
             Comparison lte = new Comparison(functions, coordinatorTxnCtx, ComparisonExpression.Type.LESS_THAN_OR_EQUAL, value, max);
-            FunctionIdent lteIdent = lte.normalize(context).toFunctionIdent();
+            Comparison normalizedLte = lte.normalize(context);
             Symbol lteFunc = allocateFunction(
-                lteIdent.name(),
-                lte.arguments(),
-                context);
+                normalizedLte.operatorName,
+                normalizedLte.arguments(),
+                context
+            );
 
             return allocateFunction(AndOperator.NAME, List.of(gteFunc, lteFunc), context);
         }
@@ -1133,29 +1145,29 @@ public class ExpressionAnalyzer {
             arguments,
             coordinatorTxnCtx.sessionContext().searchPath());
 
-        FunctionInfo functionInfo = funcImpl.info();
         Signature signature = funcImpl.signature();
-        List<Symbol> castArguments = cast(arguments, functionInfo.ident().argumentTypes());
+        Signature boundSignature = funcImpl.boundSignature();
+        List<Symbol> castArguments = cast(arguments, boundSignature.getArgumentDataTypes());
         Function newFunction;
         if (windowDefinition == null) {
-            if (functionInfo.type() == FunctionInfo.Type.AGGREGATE) {
+            if (signature.getKind() == FunctionType.AGGREGATE) {
                 context.indicateAggregates();
             } else if (filter != null) {
                 throw new UnsupportedOperationException(
                     "Only aggregate functions allow a FILTER clause");
             }
-            newFunction = new Function(functionInfo, signature, castArguments, filter);
+            newFunction = new Function(signature, castArguments, boundSignature.getReturnType().createType(), filter);
         } else {
-            if (functionInfo.type() != FunctionInfo.Type.WINDOW && functionInfo.type() != FunctionInfo.Type.AGGREGATE) {
+            if (signature.getKind() != FunctionType.WINDOW && signature.getKind() != FunctionType.AGGREGATE) {
                 throw new IllegalArgumentException(String.format(
                     Locale.ENGLISH,
                     "OVER clause was specified, but %s is neither a window nor an aggregate function.",
                     functionName));
             }
             newFunction = new WindowFunction(
-                functionInfo,
                 signature,
                 castArguments,
+                boundSignature.getReturnType().createType(),
                 filter,
                 windowDefinition);
         }
@@ -1198,7 +1210,6 @@ public class ExpressionAnalyzer {
         private Symbol left;
         private Symbol right;
         private String operatorName;
-        private FunctionIdent functionIdent;
 
         private Comparison(Functions functions,
                            CoordinatorTxnCtx coordinatorTxnCtx,
@@ -1269,17 +1280,7 @@ public class ExpressionAnalyzer {
                 functions,
                 coordinatorTxnCtx);
             right = null;
-            functionIdent = NotPredicate.INFO.ident();
             operatorName = NotPredicate.NAME;
-        }
-
-        FunctionIdent toFunctionIdent() {
-            if (functionIdent == null) {
-                return new FunctionIdent(
-                    operatorName,
-                    Arrays.asList(left.valueType(), right.valueType()));
-            }
-            return functionIdent;
         }
 
         List<Symbol> arguments() {

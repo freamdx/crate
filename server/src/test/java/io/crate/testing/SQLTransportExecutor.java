@@ -39,6 +39,7 @@ import io.crate.metadata.SearchPath;
 import io.crate.metadata.pgcatalog.PgCatalogSchemaInfo;
 import io.crate.protocols.postgres.types.PGType;
 import io.crate.protocols.postgres.types.PGTypes;
+import io.crate.protocols.postgres.types.PgOidVectorType;
 import io.crate.types.DataType;
 import io.crate.types.DataTypes;
 import io.netty.handler.codec.http.HttpResponseStatus;
@@ -77,7 +78,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
+import java.sql .ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.ArrayList;
@@ -384,19 +385,19 @@ public class SQLTransportExecutor {
 
     private static SQLResponse executeAndConvertResult(PreparedStatement preparedStatement) throws SQLException {
         if (preparedStatement.execute()) {
-            ResultSetMetaData metaData = preparedStatement.getMetaData();
+            ResultSetMetaData metadata = preparedStatement.getMetaData();
             ResultSet resultSet = preparedStatement.getResultSet();
             List<Object[]> rows = new ArrayList<>();
-            List<String> columnNames = new ArrayList<>(metaData.getColumnCount());
-            DataType[] dataTypes = new DataType[metaData.getColumnCount()];
-            for (int i = 0; i < metaData.getColumnCount(); i++) {
-                columnNames.add(metaData.getColumnName(i + 1));
+            List<String> columnNames = new ArrayList<>(metadata.getColumnCount());
+            DataType[] dataTypes = new DataType[metadata.getColumnCount()];
+            for (int i = 0; i < metadata.getColumnCount(); i++) {
+                columnNames.add(metadata.getColumnName(i + 1));
             }
             while (resultSet.next()) {
-                Object[] row = new Object[metaData.getColumnCount()];
+                Object[] row = new Object[metadata.getColumnCount()];
                 for (int i = 0; i < row.length; i++) {
                     Object value;
-                    String typeName = metaData.getColumnTypeName(i + 1);
+                    String typeName = metadata.getColumnTypeName(i + 1);
                     value = getObject(resultSet, i, typeName);
                     row[i] = value;
                 }
@@ -452,6 +453,13 @@ public class SQLTransportExecutor {
                     elements.add(Byte.parseByte((String) o));
                 }
                 return elements;
+            }
+            case "oidvector": {
+                String textval = resultSet.getString(columnIndex);
+                if (textval == null) {
+                    return null;
+                }
+                return PgOidVectorType.listFromOidVectorString(textval);
             }
             case "char":
                 String strValue = resultSet.getString(columnIndex);

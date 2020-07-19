@@ -35,12 +35,17 @@ import io.crate.types.ShortType;
 import io.crate.types.StringType;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+
+import org.hamcrest.Matchers;
 import org.joda.time.Period;
 import org.junit.Test;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 import static io.crate.types.DataTypes.GEO_POINT;
 import static io.crate.types.DataTypes.GEO_SHAPE;
@@ -116,10 +121,10 @@ public class PGTypesTest extends CrateUnitTest {
     }
 
     private static class Entry {
-        final DataType type;
+        final DataType<?> type;
         final Object value;
 
-        public Entry(DataType type, Object value) {
+        public Entry(DataType<?> type, Object value) {
             this.type = type;
             this.value = value;
         }
@@ -135,6 +140,22 @@ public class PGTypesTest extends CrateUnitTest {
         )) {
             PGType pgType = PGTypes.get(entry.type);
             assertEntryOfPgType(entry, pgType);
+        }
+    }
+
+    @Test
+    public void test_pgtypes_has_en_entry_for_each_typelem() throws Exception {
+        Map<Integer, PGType<?>> typeByOid = StreamSupport.stream(PGTypes.pgTypes().spliterator(), false)
+            .collect(Collectors.toMap(x -> x.oid(), x -> x));
+        for (PGType<?> type : PGTypes.pgTypes()) {
+            if (type.typElem() == 0) {
+                continue;
+            }
+            assertThat(
+                "The element type with oid " + type.typElem() + " must exist for " + type.typName(),
+                typeByOid.get(type.typElem()),
+                Matchers.notNullValue()
+            );
         }
     }
 
@@ -160,6 +181,24 @@ public class PGTypesTest extends CrateUnitTest {
     @Test
     public void testReadWriteVarCharType() {
         assertEntryOfPgType(new Entry(DataTypes.STRING, "test"), VarCharType.INSTANCE);
+    }
+
+    @Test
+    public void test_binary_oidvector_streaming_roundtrip() throws Exception {
+        Entry entry = new Entry(DataTypes.OIDVECTOR, List.of(1, 2, 3, 4));
+        assertThat(
+            writeAndReadBinary(entry, PGTypes.get(entry.type)),
+            is(entry.value)
+        );
+    }
+
+    @Test
+    public void test_text_oidvector_streaming_roundtrip() throws Exception {
+        Entry entry = new Entry(DataTypes.OIDVECTOR, List.of(1, 2, 3, 4));
+        assertThat(
+            writeAndReadAsText(entry, PGTypes.get(entry.type)),
+            is(entry.value)
+        );
     }
 
     @Test

@@ -35,7 +35,6 @@ import io.crate.expression.symbol.Symbols;
 import io.crate.metadata.RowGranularity;
 import io.crate.planner.distribution.DistributionInfo;
 import io.crate.test.integration.CrateUnitTest;
-import io.crate.types.DataType;
 import io.crate.types.DataTypes;
 import org.elasticsearch.common.io.stream.BytesStreamOutput;
 import org.elasticsearch.common.io.stream.StreamInput;
@@ -49,15 +48,14 @@ import java.util.UUID;
 import static org.hamcrest.core.Is.is;
 
 public class MergeNodeTest extends CrateUnitTest {
-    
+
     @Test
     public void testSerialization() throws Exception {
         List<Symbol> keys = Collections.singletonList(new InputColumn(0, DataTypes.STRING));
         List<Aggregation> aggregations = Collections.singletonList(
             new Aggregation(
-                CountAggregation.COUNT_STAR_FUNCTION,
                 CountAggregation.COUNT_STAR_SIGNATURE,
-                CountAggregation.COUNT_STAR_FUNCTION.returnType(),
+                CountAggregation.COUNT_STAR_SIGNATURE.getReturnType().createType(),
                 Collections.emptyList()
             )
         );
@@ -73,7 +71,7 @@ public class MergeNodeTest extends CrateUnitTest {
             2,
             1,
             Sets.newHashSet("node1", "node2"),
-            Arrays.<DataType>asList(DataTypes.UNDEFINED, DataTypes.STRING),
+            List.of(DataTypes.UNDEFINED, DataTypes.STRING),
             projections,
             DistributionInfo.DEFAULT_BROADCAST,
             null

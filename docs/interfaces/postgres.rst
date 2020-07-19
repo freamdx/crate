@@ -145,6 +145,7 @@ following tables:
  - `pg_description`_
  - `pg_range`_
  - `pg_enum`_
+ - `pg_roles`_
 
 
 .. _postgres_pg_type:
@@ -171,6 +172,9 @@ table available in CrateDB::
     |   21 | int2                         |     1005 |       0 |      2 | b       | N           |
     |   23 | int4                         |     1007 |       0 |      4 | b       | N           |
     |   24 | regproc                      |     1008 |       0 |      4 | b       | N           |
+    |   25 | text                         |     1009 |       0 |     -1 | b       | S           |
+    |   26 | oid                          |     1028 |       0 |      4 | b       | N           |
+    |   30 | oidvector                    |     1013 |      26 |     -1 | b       | A           |
     |  114 | json                         |      199 |       0 |     -1 | b       | U           |
     |  199 | _json                        |        0 |     114 |     -1 | b       | A           |
     |  600 | point                        |     1017 |       0 |     16 | b       | G           |
@@ -181,6 +185,7 @@ table available in CrateDB::
     | 1005 | _int2                        |        0 |      21 |     -1 | b       | A           |
     | 1007 | _int4                        |        0 |      23 |     -1 | b       | A           |
     | 1008 | _regproc                     |        0 |      24 |     -1 | b       | A           |
+    | 1009 | _text                        |        0 |      25 |     -1 | b       | A           |
     | 1015 | _varchar                     |        0 |    1043 |     -1 | b       | A           |
     | 1016 | _int8                        |        0 |      20 |     -1 | b       | A           |
     | 1017 | _point                       |        0 |     600 |     -1 | b       | A           |
@@ -200,7 +205,7 @@ table available in CrateDB::
     | 2277 | anyarray                     |        0 |    2276 |     -1 | p       | P           |
     | 2287 | _record                      |        0 |    2249 |     -1 | p       | A           |
     +------+------------------------------+----------+---------+--------+---------+-------------+
-    SELECT 35 rows in set (... sec)
+    SELECT 39 rows in set (... sec)
 
 .. NOTE::
 
@@ -406,25 +411,26 @@ either because of the table is empty or by a not matching where clause.
 
 .. _Arrays: https://www.postgresql.org/docs/current/static/arrays.html
 .. _Enterprise Edition: https://crate.io/enterprise-edition/
-.. _Simple Query: https://www.postgresql.org/docs/current/static/protocol-flow.html#id-1.10.5.7.4
 .. _Extended Query: https://www.postgresql.org/docs/current/static/protocol-flow.html#PROTOCOL-FLOW-EXT-QUERY
 .. _Github: https://github.com/crate/crate
 .. _High Level Architecture: https://crate.io/overview/high-level-architecture
+.. _pg_description: https://www.postgresql.org/docs/10/catalog-pg-description.html
+.. _pg_enum: https://www.postgresql.org/docs/10/catalog-pg-enum.html
 .. _pgjdbc: https://github.com/pgjdbc/pgjdbc
+.. _pg_range: https://www.postgresql.org/docs/10/catalog-pg-range.html
+.. _pg_roles: https://www.postgresql.org/docs/10/view-pg-roles.html
+.. _pgsql_pg_attrdef: https://www.postgresql.org/docs/10/static/catalog-pg-attrdef.html
+.. _pgsql_pg_attribute: https://www.postgresql.org/docs/10/static/catalog-pg-attribute.html
+.. _pgsql_pg_class: https://www.postgresql.org/docs/10/static/catalog-pg-class.html
+.. _pgsql_pg_constraint: https://www.postgresql.org/docs/10/static/catalog-pg-constraint.html
+.. _pgsql_pg_database: https://www.postgresql.org/docs/10/static/catalog-pg-database.html
+.. _pgsql_pg_index: https://www.postgresql.org/docs/10/static/catalog-pg-index.html
+.. _pgsql_pg_namespace: https://www.postgresql.org/docs/10/static/catalog-pg-namespace.html
+.. _pgsql_pg_proc: https://www.postgresql.org/docs/10/static/catalog-pg-proc.html
+.. _pgsql_pg_settings: https://www.postgresql.org/docs/10/view-pg-settings.html
+.. _pgsql_pg_type: https://www.postgresql.org/docs/10/static/catalog-pg-type.html
 .. _PostgreSQL Fulltext Search: https://www.postgresql.org/docs/current/static/functions-textsearch.html
 .. _PostgreSQL JDBC connection failover: https://jdbc.postgresql.org/documentation/head/connect.html#connection-failover
 .. _PostgreSQL wire protocol v3: https://www.postgresql.org/docs/current/static/protocol.html
+.. _Simple Query: https://www.postgresql.org/docs/current/static/protocol-flow.html#id-1.10.5.7.4
 .. _Value Expressions: https://www.postgresql.org/docs/current/static/sql-expressions.html
-.. _pgsql_pg_type: https://www.postgresql.org/docs/10/static/catalog-pg-type.html
-.. _pgsql_pg_class: https://www.postgresql.org/docs/10/static/catalog-pg-class.html
-.. _pgsql_pg_proc: https://www.postgresql.org/docs/10/static/catalog-pg-proc.html
-.. _pgsql_pg_namespace: https://www.postgresql.org/docs/10/static/catalog-pg-namespace.html
-.. _pgsql_pg_attrdef: https://www.postgresql.org/docs/10/static/catalog-pg-attrdef.html
-.. _pgsql_pg_attribute: https://www.postgresql.org/docs/10/static/catalog-pg-attribute.html
-.. _pgsql_pg_index: https://www.postgresql.org/docs/10/static/catalog-pg-index.html
-.. _pgsql_pg_constraint: https://www.postgresql.org/docs/10/static/catalog-pg-constraint.html
-.. _pgsql_pg_database: https://www.postgresql.org/docs/10/static/catalog-pg-database.html
-.. _pgsql_pg_settings: https://www.postgresql.org/docs/10/view-pg-settings.html
-.. _pg_description: https://www.postgresql.org/docs/10/catalog-pg-description.html
-.. _pg_range: https://www.postgresql.org/docs/10/catalog-pg-range.html
-.. _pg_enum: https://www.postgresql.org/docs/10/catalog-pg-enum.html

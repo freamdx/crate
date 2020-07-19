@@ -70,6 +70,7 @@ number of replicas.
     | doc                | locations               | BASE TABLE |                2 | 0                  |
     | doc                | partitioned_table       | BASE TABLE |                4 | 0-1                |
     | doc                | quotes                  | BASE TABLE |                2 | 0                  |
+    | information_schema | character_sets          | BASE TABLE |             NULL | NULL               |
     | information_schema | columns                 | BASE TABLE |             NULL | NULL               |
     | information_schema | key_column_usage        | BASE TABLE |             NULL | NULL               |
     | information_schema | referential_constraints | BASE TABLE |             NULL | NULL               |
@@ -91,6 +92,7 @@ number of replicas.
     | pg_catalog         | pg_namespace            | BASE TABLE |             NULL | NULL               |
     | pg_catalog         | pg_proc                 | BASE TABLE |             NULL | NULL               |
     | pg_catalog         | pg_range                | BASE TABLE |             NULL | NULL               |
+    | pg_catalog         | pg_roles                | BASE TABLE |             NULL | NULL               |
     | pg_catalog         | pg_settings             | BASE TABLE |             NULL | NULL               |
     | pg_catalog         | pg_stats                | BASE TABLE |             NULL | NULL               |
     | pg_catalog         | pg_type                 | BASE TABLE |             NULL | NULL               |
@@ -113,7 +115,7 @@ number of replicas.
     | sys                | summits                 | BASE TABLE |             NULL | NULL               |
     | sys                | users                   | BASE TABLE |             NULL | NULL               |
     +--------------------+-------------------------+------------+------------------+--------------------+
-    SELECT 46 rows in set (... sec)
+    SELECT 48 rows in set (... sec)
 
 The table also contains additional information such as specified routing
 (:ref:`sql_ddl_sharding`) and partitioned by (:ref:`partitioned_tables`)
@@ -777,3 +779,54 @@ CrateDB based to the current SQL standard (see :ref:`sql_supported_features`)::
 :comments:
     Either ``NULL`` or shows a comment about the supported status of the
     feature
+
+
+.. _character_sets:
+
+``character_sets``
+------------------
+
+The ``character_sets`` table identifies the character sets available in the
+current database.
+
+In CrateDB there is always a single entry listing `UTF8`::
+
+    cr> SELECT character_set_name, character_repertoire FROM information_schema.character_sets;
+    +--------------------+----------------------+
+    | character_set_name | character_repertoire |
+    +--------------------+----------------------+
+    | UTF8               | UCS                  |
+    +--------------------+----------------------+
+    SELECT 1 row in set (... sec)
+
+
+.. list-table::
+    :header-rows: 1
+
+    * - Column Name
+      - Return Type
+      - Description
+    * - ``character_set_catalog``
+      - ``TEXT``
+      - Not implemented, this column is always null.
+    * - ``character_set_schema``
+      - ``TEXT``
+      - Not implemented, this column is always null.
+    * - ``character_set_name``
+      - ``TEXT``
+      - Name of the character set
+    * - ``character_repertoire``
+      - ``TEXT``
+      - Character repertoire
+    * - ``form_of_use``
+      - ``TEXT``
+      - Character encoding form, same as ``character_set_name``
+    * - ``default_collate_catalog``
+      - ``TEXT``
+      - Name of the database containing the default collation (Always ``crate``)
+    * - ``default_collate_schema``
+      - ``TEXT``
+      - Name of the schema containing the default collation (Always ``NULL``)
+    * - ``default_collate_name``
+      - ``TEXT``
+      - Name of the default collation (Always ``NULL``)

@@ -38,13 +38,12 @@ public final class QuoteIdentFunction {
                 DataTypes.STRING.getTypeSignature(),
                 DataTypes.STRING.getTypeSignature()
             ),
-            (signature, args) ->
+            (signature, boundSignature) ->
                 new UnaryScalar<>(
-                    "quote_ident",
                     signature,
+                    boundSignature,
                     DataTypes.STRING,
-                    DataTypes.STRING,
-                    Identifiers::quoteIfNeeded
+                    Identifiers::maybeQuoteExpression
                 )
         );
     }

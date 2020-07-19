@@ -155,7 +155,7 @@ public class HandlerSideLevelCollectTest extends SQLTransportIntegrationTest {
         List<Symbol> arguments = Arrays.asList(tableNameRef, Literal.of("shards"));
         FunctionImplementation eqImpl
             = functions.get(null, EqOperator.NAME, arguments, SearchPath.pathWithPGCatalogAndDoc());
-        Function whereClause = new Function(eqImpl.info(), eqImpl.signature(),  arguments);
+        Function whereClause = new Function(eqImpl.signature(),  arguments, EqOperator.RETURN_TYPE);
 
         RoutedCollectPhase collectNode = collectNode(routing, toCollect, RowGranularity.DOC, new WhereClause(whereClause));
         Bucket result = collect(collectNode);
@@ -182,16 +182,16 @@ public class HandlerSideLevelCollectTest extends SQLTransportIntegrationTest {
         List<Object[]> result = Arrays.asList(Buckets.materialize(collect(collectNode))).subList(0, 10);
 
         String expected =
+            "character_repertoire| text| character_sets\n" +
+            "character_set_catalog| text| character_sets\n" +
+            "character_set_name| text| character_sets\n" +
+            "character_set_schema| text| character_sets\n" +
+            "default_collate_catalog| text| character_sets\n" +
+            "default_collate_name| text| character_sets\n" +
+            "default_collate_schema| text| character_sets\n" +
+            "form_of_use| text| character_sets\n" +
             "character_maximum_length| integer| columns\n" +
-            "character_octet_length| integer| columns\n" +
-            "character_set_catalog| text| columns\n" +
-            "character_set_name| text| columns\n" +
-            "character_set_schema| text| columns\n" +
-            "check_action| integer| columns\n" +
-            "check_references| text| columns\n" +
-            "collation_catalog| text| columns\n" +
-            "collation_name| text| columns\n" +
-            "collation_schema| text| columns";
+            "character_octet_length| integer| columns\n";
 
 
         assertThat(TestingHelpers.printedTable(result.toArray(new Object[0][])), Matchers.containsString(expected));

@@ -23,7 +23,8 @@
 package io.crate.metadata;
 
 import io.crate.metadata.settings.SessionSettings;
-import org.joda.time.DateTimeUtils;
+
+import java.time.Instant;
 
 public interface TransactionContext {
 
@@ -31,25 +32,25 @@ public interface TransactionContext {
         return new StaticTransactionContext(sessionSettings);
     }
 
-    long currentTimeMillis();
+    Instant currentInstant();
 
     SessionSettings sessionSettings();
 
     class StaticTransactionContext implements TransactionContext {
 
         private final SessionSettings sessionSettings;
-        private Long currentTimeMillis;
+        private Instant currentInstant;
 
         StaticTransactionContext(SessionSettings sessionSettings) {
             this.sessionSettings = sessionSettings;
         }
 
         @Override
-        public long currentTimeMillis() {
-            if (currentTimeMillis == null) {
-                currentTimeMillis = DateTimeUtils.currentTimeMillis();
+        public Instant currentInstant() {
+            if (currentInstant == null) {
+                currentInstant = SystemClock.currentInstant();
             }
-            return currentTimeMillis;
+            return currentInstant;
         }
 
         @Override

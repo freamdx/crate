@@ -195,6 +195,7 @@ public class PostgresWireProtocol {
     private final Authentication authService;
     private final SslReqHandler sslReqHandler;
 
+    private DelayableWriteChannel channel;
     private int msgLength;
     private byte msgType;
     private Session session;
@@ -271,9 +272,11 @@ public class PostgresWireProtocol {
 
     private static class ReadyForQueryCallback implements BiConsumer<Object, Throwable> {
         private final Channel channel;
+        private final TransactionState transactionState;
 
-        private ReadyForQueryCallback(Channel channel) {
+        private ReadyForQueryCallback(Channel channel, TransactionState transactionState) {
             this.channel = channel;
+            this.transactionState = transactionState;
         }
 
         @Override
@@ -281,7 +284,7 @@ public class PostgresWireProtocol {
             boolean clientInterrupted = t instanceof ClientInterrupted
                                         || (t != null && t.getCause() instanceof ClientInterrupted);
             if (!clientInterrupted) {
-                Messages.sendReadyForQuery(channel);
+                Messages.sendReadyForQuery(channel, transactionState);
             }
         }
     }
@@ -289,9 +292,13 @@ public class PostgresWireProtocol {
     private class MessageHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
         @Override
-        public void channelRead0(ChannelHandlerContext ctx, ByteBuf buffer) throws Exception {
-            final Channel channel = ctx.channel();
+        public void channelRegistered(ChannelHandlerContext ctx) throws Exception {
+            channel = new DelayableWriteChannel(ctx.channel());
+        }
 
+        @Override
+        public void channelRead0(ChannelHandlerContext ctx, ByteBuf buffer) throws Exception {
+            assert channel != null : "Channel must be initialized";
             try {
                 dispatchState(buffer, channel);
             } catch (Throwable t) {
@@ -311,7 +318,7 @@ public class PostgresWireProtocol {
             }
         }
 
-        private void dispatchState(ByteBuf buffer, Channel channel) {
+        private void dispatchState(ByteBuf buffer, DelayableWriteChannel channel) {
             switch (state) {
                 case STARTUP_HEADER:
                 case MSG_HEADER:
@@ -336,7 +343,7 @@ public class PostgresWireProtocol {
             }
         }
 
-        private void dispatchMessage(ByteBuf buffer, Channel channel) {
+        private void dispatchMessage(ByteBuf buffer, DelayableWriteChannel channel) {
             switch (msgType) {
                 case 'Q': // Query (simple)
                     handleSimpleQuery(buffer, channel);
@@ -390,6 +397,7 @@ public class PostgresWireProtocol {
         @Override
         public void channelUnregistered(ChannelHandlerContext ctx) throws Exception {
             LOGGER.trace("channelDisconnected");
+            channel = null;
             closeSession();
             super.channelUnregistered(ctx);
         }
@@ -449,7 +457,7 @@ public class PostgresWireProtocol {
         Messages.sendParameterStatus(channel, "datestyle", "ISO");
         Messages.sendParameterStatus(channel, "TimeZone", "UTC");
         Messages.sendParameterStatus(channel, "integer_datetimes", "on");
-        Messages.sendReadyForQuery(channel);
+        Messages.sendReadyForQuery(channel, TransactionState.IDLE);
     }
 
     /**
@@ -608,7 +616,7 @@ public class PostgresWireProtocol {
      * | string portalName
      * | int32 maxRows (0 = unlimited)
      */
-    private void handleExecute(ByteBuf buffer, Channel channel) {
+    private void handleExecute(ByteBuf buffer, DelayableWriteChannel channel) {
         String portalName = readCString(buffer);
         int maxRows = buffer.readInt();
         String query = session.getQuery(portalName);
@@ -625,20 +633,40 @@ public class PostgresWireProtocol {
             maxRows = 0;
             resultReceiver = new RowCountReceiver(
                 query,
-                channel,
+                channel.bypassDelay(),
                 SQLExceptions.forWireTransmission(getAccessControl.apply(session.sessionContext()))
             );
         } else {
             // query with resultSet
             resultReceiver = new ResultSetReceiver(
                 query,
-                channel,
+                channel.bypassDelay(),
+                session.transactionState(),
                 SQLExceptions.forWireTransmission(getAccessControl.apply(session.sessionContext())),
                 Lists2.map(outputTypes, PGTypes::get),
                 session.getResultFormatCodes(portalName)
             );
         }
-        session.execute(portalName, maxRows, resultReceiver);
+        // .execute is going async and may execute the query in another thread-pool.
+        // The results are later sent to the clients via the `ResultReceiver` created
+        // above, The `channel.write` calls - which the `ResultReceiver` makes - may
+        // happen in a thread which is *not* a netty thread.
+        // If that is the case, netty schedules the writes intead of running them
+        // immediately. A consequence of that is that *this* thread can continue
+        // processing other messages from the client, and if this thread then sends messages to the
+        // client, these are sent immediately, overtaking the result messages of the
+        // execute that is triggered here.
+        //
+        // This would lead to out-of-order messages. For example, we could send a
+        // `parseComplete` before the `commandComplete` of the previous statement has
+        // been transmitted.
+        //
+        // To ensure clients receive messages in the correct order we delay all writes
+        // on the channel until the future below is finished.
+        CompletableFuture<?> execute = session.execute(portalName, maxRows, resultReceiver);
+        if (execute != null) {
+            channel.delayWritesUntil(execute);
+        }
     }
 
     private void handleSync(final Channel channel) {
@@ -654,15 +682,15 @@ public class PostgresWireProtocol {
             //  4) p, b, e    -> We've a new query deferred.
             //  5) `sync`     -> We must execute the query from 4, but not 1)
             session.resetDeferredExecutions();
-            Messages.sendReadyForQuery(channel);
+            Messages.sendReadyForQuery(channel, TransactionState.FAILED_TRANSACTION);
             return;
         }
         try {
-            ReadyForQueryCallback readyForQueryCallback = new ReadyForQueryCallback(channel);
+            ReadyForQueryCallback readyForQueryCallback = new ReadyForQueryCallback(channel, session.transactionState());
             session.sync().whenComplete(readyForQueryCallback);
         } catch (Throwable t) {
             Messages.sendErrorResponse(channel, t);
-            Messages.sendReadyForQuery(channel);
+            Messages.sendReadyForQuery(channel, TransactionState.FAILED_TRANSACTION);
         }
     }
 
@@ -677,7 +705,7 @@ public class PostgresWireProtocol {
     }
 
     @VisibleForTesting
-    void handleSimpleQuery(ByteBuf buffer, final Channel channel) {
+    void handleSimpleQuery(ByteBuf buffer, final DelayableWriteChannel channel) {
         String queryString = readCString(buffer);
         assert queryString != null : "query must not be nulL";
 
@@ -687,10 +715,10 @@ public class PostgresWireProtocol {
         for (String query : queries) {
             composedFuture = composedFuture.thenCompose(result -> handleSingleQuery(query, channel));
         }
-        composedFuture.whenComplete(new ReadyForQueryCallback(channel));
+        composedFuture.whenComplete(new ReadyForQueryCallback(channel, TransactionState.IDLE));
     }
 
-    private CompletableFuture<?> handleSingleQuery(String query, Channel channel) {
+    private CompletableFuture<?> handleSingleQuery(String query, DelayableWriteChannel channel) {
 
         CompletableFuture<?> result = new CompletableFuture<>();
 
@@ -708,19 +736,24 @@ public class PostgresWireProtocol {
 
             Function<Throwable, Exception> wrapError = SQLExceptions.forWireTransmission(
                 getAccessControl.apply(session.sessionContext()));
+            CompletableFuture<?> execute;
             if (fields == null) {
-                RowCountReceiver rowCountReceiver = new RowCountReceiver(query, channel, wrapError);
-                session.execute("", 0, rowCountReceiver);
+                RowCountReceiver rowCountReceiver = new RowCountReceiver(query, channel.bypassDelay(), wrapError);
+                execute = session.execute("", 0, rowCountReceiver);
             } else {
                 Messages.sendRowDescription(channel, fields, null);
                 ResultSetReceiver resultSetReceiver = new ResultSetReceiver(
                     query,
-                    channel,
+                    channel.bypassDelay(),
+                    TransactionState.IDLE,
                     wrapError,
                     Lists2.map(fields, x -> PGTypes.get(x.valueType())),
                     null
                 );
-                session.execute("", 0, resultSetReceiver);
+                execute = session.execute("", 0, resultSetReceiver);
+            }
+            if (execute != null) {
+                channel.delayWritesUntil(execute);
             }
             return session.sync();
         } catch (Throwable t) {

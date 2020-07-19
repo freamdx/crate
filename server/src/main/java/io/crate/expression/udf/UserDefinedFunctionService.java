@@ -27,8 +27,8 @@ import io.crate.common.unit.TimeValue;
 import io.crate.exceptions.UserDefinedFunctionAlreadyExistsException;
 import io.crate.exceptions.UserDefinedFunctionUnknownException;
 import io.crate.metadata.FunctionProvider;
-import io.crate.metadata.FunctionInfo;
 import io.crate.metadata.FunctionName;
+import io.crate.metadata.FunctionType;
 import io.crate.metadata.Functions;
 import io.crate.metadata.Scalar;
 import io.crate.metadata.functions.Signature;
@@ -39,7 +39,7 @@ import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.support.master.AcknowledgedResponse;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.ClusterStateUpdateTask;
-import org.elasticsearch.cluster.metadata.MetaData;
+import org.elasticsearch.cluster.metadata.Metadata;
 import org.elasticsearch.cluster.service.ClusterService;
 import org.elasticsearch.common.inject.Inject;
 import org.elasticsearch.common.inject.Singleton;
@@ -82,23 +82,23 @@ public class UserDefinedFunctionService {
         languageRegistry.put(language.name(), language);
     }
 
-    void registerFunction(final UserDefinedFunctionMetaData metaData,
+    void registerFunction(final UserDefinedFunctionMetadata metadata,
                           final boolean replace,
                           final ActionListener<AcknowledgedResponse> listener,
                           final TimeValue timeout) {
-        clusterService.submitStateUpdateTask("put_udf [" + metaData.name() + "]",
+        clusterService.submitStateUpdateTask("put_udf [" + metadata.name() + "]",
             new ClusterStateUpdateTask() {
                 @Override
                 public ClusterState execute(ClusterState currentState) throws Exception {
-                    MetaData currentMetaData = currentState.metaData();
-                    MetaData.Builder mdBuilder = MetaData.builder(currentMetaData);
-                    UserDefinedFunctionsMetaData functions = putFunction(
-                        currentMetaData.custom(UserDefinedFunctionsMetaData.TYPE),
-                        metaData,
+                    Metadata currentMetadata = currentState.metadata();
+                    Metadata.Builder mdBuilder = Metadata.builder(currentMetadata);
+                    UserDefinedFunctionsMetadata functions = putFunction(
+                        currentMetadata.custom(UserDefinedFunctionsMetadata.TYPE),
+                        metadata,
                         replace
                     );
-                    mdBuilder.putCustom(UserDefinedFunctionsMetaData.TYPE, functions);
-                    return ClusterState.builder(currentState).metaData(mdBuilder).build();
+                    mdBuilder.putCustom(UserDefinedFunctionsMetadata.TYPE, functions);
+                    return ClusterState.builder(currentState).metadata(mdBuilder).build();
                 }
 
                 @Override
@@ -120,7 +120,7 @@ public class UserDefinedFunctionService {
 
     void dropFunction(final String schema,
                       final String name,
-                      final List<DataType> argumentTypes,
+                      final List<DataType<?>> argumentTypes,
                       final boolean ifExists,
                       final ActionListener<AcknowledgedResponse> listener,
                       final TimeValue timeout) {
@@ -128,17 +128,17 @@ public class UserDefinedFunctionService {
             new ClusterStateUpdateTask() {
                 @Override
                 public ClusterState execute(ClusterState currentState) throws Exception {
-                    MetaData metaData = currentState.metaData();
-                    MetaData.Builder mdBuilder = MetaData.builder(currentState.metaData());
-                    UserDefinedFunctionsMetaData functions = removeFunction(
-                        metaData.custom(UserDefinedFunctionsMetaData.TYPE),
+                    Metadata metadata = currentState.metadata();
+                    Metadata.Builder mdBuilder = Metadata.builder(currentState.metadata());
+                    UserDefinedFunctionsMetadata functions = removeFunction(
+                        metadata.custom(UserDefinedFunctionsMetadata.TYPE),
                         schema,
                         name,
                         argumentTypes,
                         ifExists
                     );
-                    mdBuilder.putCustom(UserDefinedFunctionsMetaData.TYPE, functions);
-                    return ClusterState.builder(currentState).metaData(mdBuilder).build();
+                    mdBuilder.putCustom(UserDefinedFunctionsMetadata.TYPE, functions);
+                    return ClusterState.builder(currentState).metadata(mdBuilder).build();
                 }
 
                 @Override
@@ -159,52 +159,52 @@ public class UserDefinedFunctionService {
     }
 
     @VisibleForTesting
-    UserDefinedFunctionsMetaData putFunction(@Nullable UserDefinedFunctionsMetaData oldMetaData,
-                                             UserDefinedFunctionMetaData functionMetaData,
+    UserDefinedFunctionsMetadata putFunction(@Nullable UserDefinedFunctionsMetadata oldMetadata,
+                                             UserDefinedFunctionMetadata functionMetadata,
                                              boolean replace) {
-        if (oldMetaData == null) {
-            return UserDefinedFunctionsMetaData.of(functionMetaData);
+        if (oldMetadata == null) {
+            return UserDefinedFunctionsMetadata.of(functionMetadata);
         }
 
         // create a new instance of the metadata, to guarantee the cluster changed action.
-        UserDefinedFunctionsMetaData newMetaData = UserDefinedFunctionsMetaData.newInstance(oldMetaData);
-        if (oldMetaData.contains(functionMetaData.schema(), functionMetaData.name(), functionMetaData.argumentTypes())) {
+        UserDefinedFunctionsMetadata newMetadata = UserDefinedFunctionsMetadata.newInstance(oldMetadata);
+        if (oldMetadata.contains(functionMetadata.schema(), functionMetadata.name(), functionMetadata.argumentTypes())) {
             if (!replace) {
-                throw new UserDefinedFunctionAlreadyExistsException(functionMetaData);
+                throw new UserDefinedFunctionAlreadyExistsException(functionMetadata);
             }
-            newMetaData.replace(functionMetaData);
+            newMetadata.replace(functionMetadata);
         } else {
-            newMetaData.add(functionMetaData);
+            newMetadata.add(functionMetadata);
         }
 
-        assert !newMetaData.equals(oldMetaData) : "must not be equal to guarantee the cluster change action";
-        return newMetaData;
+        assert !newMetadata.equals(oldMetadata) : "must not be equal to guarantee the cluster change action";
+        return newMetadata;
     }
 
     @VisibleForTesting
-    UserDefinedFunctionsMetaData removeFunction(@Nullable UserDefinedFunctionsMetaData functions,
+    UserDefinedFunctionsMetadata removeFunction(@Nullable UserDefinedFunctionsMetadata functions,
                                                 String schema,
                                                 String name,
-                                                List<DataType> argumentDataTypes,
+                                                List<DataType<?>> argumentDataTypes,
                                                 boolean ifExists) {
         if (!ifExists && (functions == null || !functions.contains(schema, name, argumentDataTypes))) {
             throw new UserDefinedFunctionUnknownException(schema, name, argumentDataTypes);
         } else if (functions == null) {
-            return UserDefinedFunctionsMetaData.of();
+            return UserDefinedFunctionsMetadata.of();
         } else {
             // create a new instance of the metadata, to guarantee the cluster changed action.
-            UserDefinedFunctionsMetaData newMetaData = UserDefinedFunctionsMetaData.newInstance(functions);
-            newMetaData.remove(schema, name, argumentDataTypes);
-            return newMetaData;
+            UserDefinedFunctionsMetadata newMetadata = UserDefinedFunctionsMetadata.newInstance(functions);
+            newMetadata.remove(schema, name, argumentDataTypes);
+            return newMetadata;
         }
     }
 
 
-    public void updateImplementations(String schema, Stream<UserDefinedFunctionMetaData> userDefinedFunctions) {
+    public void updateImplementations(String schema, Stream<UserDefinedFunctionMetadata> userDefinedFunctions) {
         final Map<FunctionName, List<FunctionProvider>> implementations = new HashMap<>();
-        Iterator<UserDefinedFunctionMetaData> it = userDefinedFunctions.iterator();
+        Iterator<UserDefinedFunctionMetadata> it = userDefinedFunctions.iterator();
         while (it.hasNext()) {
-            UserDefinedFunctionMetaData udf = it.next();
+            UserDefinedFunctionMetadata udf = it.next();
             FunctionProvider resolver = buildFunctionResolver(udf);
             if (resolver == null) {
                 continue;
@@ -218,11 +218,11 @@ public class UserDefinedFunctionService {
     }
 
     @Nullable
-    public FunctionProvider buildFunctionResolver(UserDefinedFunctionMetaData udf) {
+    public FunctionProvider buildFunctionResolver(UserDefinedFunctionMetadata udf) {
         var functionName = new FunctionName(udf.schema(), udf.name());
         var signature = Signature.builder()
             .name(functionName)
-            .kind(FunctionInfo.Type.SCALAR)
+            .kind(FunctionType.SCALAR)
             .argumentTypes(
                 Lists2.map(
                     udf.argumentTypes(),

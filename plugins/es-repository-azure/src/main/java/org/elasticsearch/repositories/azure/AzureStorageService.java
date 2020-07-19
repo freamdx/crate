@@ -39,9 +39,9 @@ import com.microsoft.azure.storage.blob.ListBlobItem;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.message.ParameterizedMessage;
-import org.elasticsearch.common.blobstore.BlobMetaData;
+import org.elasticsearch.common.blobstore.BlobMetadata;
 import org.elasticsearch.common.blobstore.BlobPath;
-import org.elasticsearch.common.blobstore.support.PlainBlobMetaData;
+import org.elasticsearch.common.blobstore.support.PlainBlobMetadata;
 import io.crate.common.collections.Tuple;
 import org.elasticsearch.common.settings.SettingsException;
 import org.elasticsearch.common.unit.ByteSizeUnit;
@@ -185,6 +185,21 @@ public class AzureStorageService {
         azureBlob.delete(DeleteSnapshotsOption.NONE, null, null, client.v2().get());
     }
 
+    void deleteBlobDirectory(String container, String path) throws URISyntaxException, StorageException, IOException {
+        final Tuple<CloudBlobClient, Supplier<OperationContext>> client = client();
+        final CloudBlobContainer blobContainer = client.v1().getContainerReference(container);
+        for (final ListBlobItem blobItem : blobContainer.listBlobs(path, true)) {
+            // uri.getPath is of the form /container/keyPath.* and we want to strip off the /container/
+            // this requires 1 + container.length() + 1, with each 1 corresponding to one of the /
+            final String blobPath = blobItem.getUri().getPath().substring(1 + container.length() + 1);
+            try {
+                deleteBlob(container, blobPath);
+            } catch (URISyntaxException | StorageException e) {
+                throw new IOException("Deleting directory [" + path + "] failed");
+            }
+        }
+    }
+
     public InputStream getInputStream(String container, String blob)
         throws URISyntaxException, StorageException, IOException {
         final Tuple<CloudBlobClient, Supplier<OperationContext>> client = client();
@@ -193,12 +208,12 @@ public class AzureStorageService {
         return blockBlobReference.openInputStream(null, null, client.v2().get());
     }
 
-    public Map<String, BlobMetaData> listBlobsByPrefix(String container, String keyPath, String prefix)
+    public Map<String, BlobMetadata> listBlobsByPrefix(String container, String keyPath, String prefix)
         throws URISyntaxException, StorageException {
         // NOTE: this should be here: if (prefix == null) prefix = "";
         // however, this is really inefficient since deleteBlobsByPrefix enumerates everything and
         // then does a prefix match on the result; it should just call listBlobsByPrefix with the prefix!
-        final var blobsBuilder = new HashMap<String, BlobMetaData>();
+        final var blobsBuilder = new HashMap<String, BlobMetadata>();
         final EnumSet<BlobListingDetails> enumBlobListingDetails = EnumSet.of(BlobListingDetails.METADATA);
         final Tuple<CloudBlobClient, Supplier<OperationContext>> client = client();
         final CloudBlobContainer blobContainer = client.v1().getContainerReference(container);
@@ -214,7 +229,7 @@ public class AzureStorageService {
                 final BlobProperties properties = ((CloudBlob) blobItem).getProperties();
                 final String name = blobPath.substring(keyPath.length());
                 LOGGER.trace(() -> new ParameterizedMessage("blob url [{}], name [{}], size [{}]", uri, name, properties.getLength()));
-                blobsBuilder.put(name, new PlainBlobMetaData(name, properties.getLength()));
+                blobsBuilder.put(name, new PlainBlobMetadata(name, properties.getLength()));
             }
         }
 

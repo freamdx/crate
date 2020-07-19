@@ -26,13 +26,12 @@ import com.google.common.collect.Iterators;
 import io.crate.common.collections.Lists2;
 import io.crate.data.Input;
 import io.crate.data.Row;
-import io.crate.metadata.FunctionIdent;
-import io.crate.metadata.FunctionInfo;
 import io.crate.metadata.TransactionContext;
 import io.crate.metadata.functions.Signature;
 import io.crate.metadata.tablefunctions.TableFunctionImplementation;
 import io.crate.types.ArrayType;
 import io.crate.types.DataType;
+import io.crate.types.DataTypes;
 import io.crate.types.RowType;
 
 import java.util.ArrayList;
@@ -40,6 +39,7 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 
+import static io.crate.metadata.functions.TypeVariableConstraint.typeVariable;
 import static io.crate.metadata.functions.TypeVariableConstraint.typeVariableOfAnyType;
 import static io.crate.types.TypeSignature.parseTypeSignature;
 
@@ -53,51 +53,82 @@ public class UnnestFunction {
                 .table(
                     NAME,
                     parseTypeSignature("array(E)"),
-                    RowType.EMPTY.getTypeSignature())
-                .withTypeVariableConstraints(typeVariableOfAnyType("E"))
+                    parseTypeSignature("E")
+                )
+                .withTypeVariableConstraints(typeVariable("E")),
+            (signature, boundSignature) -> new UnnestTableFunctionImplementation(
+                signature,
+                boundSignature,
+                new RowType(List.of(boundSignature.getReturnType().createType())))
+        );
+        module.register(
+            Signature
+                .table(
+                    NAME,
+                    parseTypeSignature("array(E)"),
+                    parseTypeSignature("array(N)"),
+                    RowType.EMPTY.getTypeSignature()
+                )
+                .withTypeVariableConstraints(typeVariable("E"), typeVariableOfAnyType("N"))
                 .withVariableArity(),
-            UnnestTableFunctionImplementation::new
+            (signature, boundSignature) -> {
+                var argTypes = boundSignature.getArgumentDataTypes();
+                ArrayList<DataType<?>> fieldTypes = new ArrayList<>(argTypes.size());
+                for (int i = 0; i < argTypes.size(); i++) {
+                    DataType<?> dataType = argTypes.get(i);
+                    fieldTypes.add(ArrayType.unnest(dataType));
+                }
+                var returnType = new RowType(fieldTypes);
+                // the return type of the bound signature has to be resolved
+                // and created explicitly based on the arguments of the bounded
+                // signature, such as we cannot resolve correctly the field types
+                // of the record type from the array of any type with variable arity.
+                return new UnnestTableFunctionImplementation(
+                    signature,
+                    Signature.builder()
+                        .name(boundSignature.getName())
+                        .kind(boundSignature.getKind())
+                        .argumentTypes(boundSignature.getArgumentTypes())
+                        .returnType(returnType.getTypeSignature())
+                        .build(),
+                    returnType);
+            }
         );
         // unnest() to keep it compatible with previous versions
         module.register(
             Signature.table(
                 NAME,
-                RowType.EMPTY.getTypeSignature()),
-            UnnestTableFunctionImplementation::new
+                DataTypes.UNTYPED_OBJECT.getTypeSignature()
+            ),
+            (signature, boundSignature) -> new UnnestTableFunctionImplementation(
+                signature,
+                boundSignature,
+                RowType.EMPTY)
         );
     }
 
     static class UnnestTableFunctionImplementation extends TableFunctionImplementation<List<Object>> {
 
-        private final FunctionInfo info;
         private final RowType returnType;
         private final Signature signature;
+        private final Signature boundSignature;
 
-        private UnnestTableFunctionImplementation(Signature signature, List<DataType> argTypes) {
+        private UnnestTableFunctionImplementation(Signature signature,
+                                                  Signature boundSignature,
+                                                  RowType returnType) {
             this.signature = signature;
-            ArrayList<DataType<?>> fieldTypes = new ArrayList<>(argTypes.size());
-            for (int i = 0; i < argTypes.size(); i++) {
-                DataType<?> dataType = argTypes.get(i);
-                fieldTypes.add(ArrayType.unnest(dataType));
-            }
-            this.returnType = new RowType(fieldTypes);
-            this.info = new FunctionInfo(
-                new FunctionIdent(null, NAME, argTypes),
-                returnType.numElements() == 1
-                    ? returnType.getFieldType(0)
-                    : returnType,
-                FunctionInfo.Type.TABLE
-            );
-        }
-
-        @Override
-        public FunctionInfo info() {
-            return info;
+            this.boundSignature = boundSignature;
+            this.returnType = returnType;
         }
 
         @Override
         public Signature signature() {
             return signature;
+        }
+
+        @Override
+        public Signature boundSignature() {
+            return boundSignature;
         }
 
         @Override
@@ -111,7 +142,6 @@ public class UnnestFunction {
         }
 
         /**
-         *
          * @param arguments collection of array-literals
          *                  e.g. [ [1, 2], [Marvin, Trillian] ]
          * @return Bucket containing the unnested rows.
@@ -130,7 +160,7 @@ public class UnnestFunction {
         private Iterator<Object>[] createIterators(ArrayList<List<Object>> valuesPerColumn) {
             Iterator[] iterators = new Iterator[valuesPerColumn.size()];
             for (int i = 0; i < valuesPerColumn.size(); i++) {
-                DataType<?> dataType = info.ident().argumentTypes().get(i);
+                DataType<?> dataType = boundSignature.getArgumentDataTypes().get(i);
                 assert dataType instanceof ArrayType : "Argument to unnest must be an array";
                 iterators[i] = createIterator(valuesPerColumn.get(i), (ArrayType<?>) dataType);
             }

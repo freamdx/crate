@@ -115,6 +115,12 @@ public interface BlobContainer {
     void deleteBlob(String blobName) throws IOException;
 
     /**
+     * Deletes this container and all its contents from the repository.
+     * @throws IOException on failure
+     */
+    void delete() throws IOException;
+
+    /**
      * Deletes the blobs with given names. Unlike {@link #deleteBlob(String)} this method will not throw an exception
      * when one or multiple of the given blobs don't exist and simply ignore this case.
      *
@@ -170,10 +176,10 @@ public interface BlobContainer {
      * Lists all blobs in the container.
      *
      * @return  A map of all the blobs in the container.  The keys in the map are the names of the blobs and
-     *          the values are {@link BlobMetaData}, containing basic information about each blob.
+     *          the values are {@link BlobMetadata}, containing basic information about each blob.
      * @throws  IOException if there were any failures in reading from the blob container.
      */
-    Map<String, BlobMetaData> listBlobs() throws IOException;
+    Map<String, BlobMetadata> listBlobs() throws IOException;
 
     /**
      * Lists all blobs in the container that match the specified prefix.
@@ -181,8 +187,8 @@ public interface BlobContainer {
      * @param   blobNamePrefix
      *          The prefix to match against blob names in the container.
      * @return  A map of the matching blobs in the container.  The keys in the map are the names of the blobs
-     *          and the values are {@link BlobMetaData}, containing basic information about each blob.
+     *          and the values are {@link BlobMetadata}, containing basic information about each blob.
      * @throws  IOException if there were any failures in reading from the blob container.
      */
-    Map<String, BlobMetaData> listBlobsByPrefix(String blobNamePrefix) throws IOException;
+    Map<String, BlobMetadata> listBlobsByPrefix(String blobNamePrefix) throws IOException;
 }

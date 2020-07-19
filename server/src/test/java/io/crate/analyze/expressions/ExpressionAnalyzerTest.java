@@ -33,7 +33,6 @@ import io.crate.analyze.relations.FullQualifiedNameFieldProvider;
 import io.crate.analyze.relations.ParentRelations;
 import io.crate.analyze.relations.TableRelation;
 import io.crate.auth.user.User;
-import io.crate.exceptions.ConversionException;
 import io.crate.expression.operator.EqOperator;
 import io.crate.expression.operator.LikeOperators;
 import io.crate.expression.operator.LtOperator;
@@ -116,7 +115,7 @@ public class ExpressionAnalyzerTest extends CrateDummyClusterServiceUnitTest {
     @Test
     public void testUnsupportedExpressionCurrentDate() throws Exception {
         expectedException.expect(UnsupportedOperationException.class);
-        expectedException.expectMessage("Unsupported expression current_time");
+        expectedException.expectMessage("Unsupported expression current_date");
         SessionContext sessionContext = SessionContext.systemSessionContext();
         ExpressionAnalyzer expressionAnalyzer = new ExpressionAnalyzer(
             functions, coordinatorTxnCtx, paramTypeHints,
@@ -127,7 +126,7 @@ public class ExpressionAnalyzerTest extends CrateDummyClusterServiceUnitTest {
             null);
         ExpressionAnalysisContext expressionAnalysisContext = new ExpressionAnalysisContext();
 
-        expressionAnalyzer.convert(SqlParser.createExpression("current_time"), expressionAnalysisContext);
+        expressionAnalyzer.convert(SqlParser.createExpression("current_date"), expressionAnalysisContext);
     }
 
     @Test
@@ -229,14 +228,20 @@ public class ExpressionAnalyzerTest extends CrateDummyClusterServiceUnitTest {
     public void testSwapFunctionLeftSide() throws Exception {
         Function cmp = (Function) expressions.normalize(executor.asSymbol("8 + 5 > t1.x"));
         // the comparison was swapped so the field is on the left side
-        assertThat(cmp.info().ident().name(), is("op_<"));
+        assertThat(cmp.name(), is("op_<"));
         assertThat(cmp.arguments().get(0), isReference("x"));
     }
 
     @Test
     public void testBetweenIsRewrittenToLteAndGte() throws Exception {
-        Symbol symbol = expressions.asSymbol("10 between 1 and 10");
-        assertThat(symbol, isSQL("true"));
+        Symbol symbol = executor.asSymbol("2 between t1.x and 20");
+        assertThat(symbol, isSQL("(doc.t1.x <= 2)"));
+    }
+
+    @Test
+    public void test_between_rewrite_if_first_arg_is_a_reference() throws Exception {
+        Symbol symbol = executor.asSymbol("t1.x between 10 and 20");
+        assertThat(symbol, isSQL("((doc.t1.x >= 10) AND (doc.t1.x <= 20))"));
     }
 
     @Test
@@ -369,13 +374,14 @@ public class ExpressionAnalyzerTest extends CrateDummyClusterServiceUnitTest {
 
     @Test
     public void testAnyWithArrayOnBothSidesResultsInNiceErrorMessage() {
-        expectedException.expectMessage("unknown function: any_=(integer_array, integer_array)");
+        expectedException.expectMessage("Unknown function: (doc.tarr.xs = ANY(_array(10, 20)))," +
+                                        " no overload found for matching argument types: (integer_array, integer_array).");
         executor.analyze("select * from tarr where xs = ANY([10, 20])");
     }
 
     @Test
     public void testCallingUnknownFunctionWithExplicitSchemaRaisesNiceError() {
-        expectedException.expectMessage("unknown function: foo.bar(integer)");
+        expectedException.expectMessage("Unknown function: foo.bar(1)");
         executor.analyze("select foo.bar(1)");
     }
 

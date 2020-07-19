@@ -40,13 +40,19 @@ public class NegateFunctionsTest extends AbstractScalarFunctionsTest {
     @Test
     public void testNegateOnStringResultsInError() {
         expectedException.expect(UnsupportedOperationException.class);
-        expectedException.expectMessage("unknown function: _negate(text)");
+        expectedException.expectMessage("Unknown function: - doc.users.name," +
+                                        " no overload found for matching argument types: (text).");
         assertEvaluate("- name", nullValue(), Literal.of("foo"));
     }
 
     @Test
     public void testNegateInteger() throws Exception {
         assertEvaluate("- age", -4, Literal.of(4));
+    }
+
+    @Test
+    public void test_negate_cast_to_real() throws Exception {
+        assertEvaluate("- CAST(36 as REAL)", -36.0f);
     }
 
     @Test

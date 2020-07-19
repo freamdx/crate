@@ -20,7 +20,7 @@
 package org.elasticsearch;
 
 import io.crate.common.SuppressForbidden;
-import org.elasticsearch.cluster.metadata.IndexMetaData;
+import org.elasticsearch.cluster.metadata.IndexMetadata;
 import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
@@ -88,8 +88,13 @@ public class Version implements Comparable<Version>, ToXContentFragment {
     public static final int ES_V_7_1_4_ID = 7_01_04_99;
     public static final int ES_V_7_1_5_ID = 7_01_05_99;
     public static final int ES_V_7_1_6_ID = 7_01_06_99;
+    public static final int ES_V_7_1_7_ID = 7_01_07_99;
+    public static final int ES_V_7_1_8_ID = 7_01_08_99;
 
     public static final int ES_V_7_2_0_ID = 7_02_00_99;
+    public static final int ES_V_7_2_1_ID = 7_02_01_99;
+
+    public static final int ES_V_7_3_0_ID = 7_03_00_99;
 
     public static final Version V_4_0_0 = new Version(ES_V_7_0_0_ID, false, org.apache.lucene.util.Version.LUCENE_8_0_0);
     public static final Version V_4_0_1 = new Version(ES_V_7_0_1_ID, false, org.apache.lucene.util.Version.LUCENE_8_0_0);
@@ -112,10 +117,15 @@ public class Version implements Comparable<Version>, ToXContentFragment {
     public static final Version V_4_1_4 = new Version(ES_V_7_1_4_ID, false, org.apache.lucene.util.Version.LUCENE_8_4_0);
     public static final Version V_4_1_5 = new Version(ES_V_7_1_5_ID, false, org.apache.lucene.util.Version.LUCENE_8_4_0);
     public static final Version V_4_1_6 = new Version(ES_V_7_1_6_ID, false, org.apache.lucene.util.Version.LUCENE_8_4_0);
+    public static final Version V_4_1_7 = new Version(ES_V_7_1_7_ID, false, org.apache.lucene.util.Version.LUCENE_8_4_0);
+    public static final Version V_4_1_8 = new Version(ES_V_7_1_8_ID, false, org.apache.lucene.util.Version.LUCENE_8_4_0);
 
-    public static final Version V_4_2_0 = new Version(ES_V_7_2_0_ID, true, org.apache.lucene.util.Version.LUCENE_8_5_1);
+    public static final Version V_4_2_0 = new Version(ES_V_7_2_0_ID, false, org.apache.lucene.util.Version.LUCENE_8_5_1);
+    public static final Version V_4_2_1 = new Version(ES_V_7_2_1_ID, false, org.apache.lucene.util.Version.LUCENE_8_5_1);
 
-    public static final Version CURRENT = V_4_2_0;
+    public static final Version V_4_3_0 = new Version(ES_V_7_3_0_ID, true, org.apache.lucene.util.Version.LUCENE_8_6_0);
+
+    public static final Version CURRENT = V_4_3_0;
 
     static {
         assert CURRENT.luceneVersion.equals(org.apache.lucene.util.Version.LATEST) : "Version must be upgraded to ["
@@ -173,9 +183,19 @@ public class Version implements Comparable<Version>, ToXContentFragment {
                 return V_4_1_5;
             case ES_V_7_1_6_ID:
                 return V_4_1_6;
+            case ES_V_7_1_7_ID:
+                return V_4_1_7;
+            case ES_V_7_1_8_ID:
+                return V_4_1_8;
 
             case ES_V_7_2_0_ID:
                 return V_4_2_0;
+            case ES_V_7_2_1_ID:
+                return V_4_2_1;
+
+            case ES_V_7_3_0_ID:
+                return V_4_3_0;
+
             case V_EMPTY_ID:
                 return V_EMPTY;
             default:
@@ -205,16 +225,16 @@ public class Version implements Comparable<Version>, ToXContentFragment {
      * Return the {@link Version} of Elasticsearch that has been used to create an index given its settings.
      *
      * @throws IllegalStateException if the given index settings doesn't contain a value for the key
-     *         {@value IndexMetaData#SETTING_VERSION_CREATED}
+     *         {@value IndexMetadata#SETTING_VERSION_CREATED}
      */
     public static Version indexCreated(Settings indexSettings) {
-        final Version indexVersion = IndexMetaData.SETTING_INDEX_VERSION_CREATED.get(indexSettings);
+        final Version indexVersion = IndexMetadata.SETTING_INDEX_VERSION_CREATED.get(indexSettings);
         if (indexVersion == V_EMPTY) {
             final String message = String.format(
                     Locale.ROOT,
                     "[%s] is not present in the index settings for index with UUID [%s]",
-                    IndexMetaData.SETTING_INDEX_VERSION_CREATED.getKey(),
-                    indexSettings.get(IndexMetaData.SETTING_INDEX_UUID));
+                    IndexMetadata.SETTING_INDEX_VERSION_CREATED.getKey(),
+                    indexSettings.get(IndexMetadata.SETTING_INDEX_UUID));
             throw new IllegalStateException(message);
         }
         return indexVersion;

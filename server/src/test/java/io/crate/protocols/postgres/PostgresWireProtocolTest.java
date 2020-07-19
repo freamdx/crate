@@ -127,7 +127,7 @@ public class PostgresWireProtocolTest extends CrateDummyClusterServiceUnitTest {
         ByteBuf buffer = Unpooled.buffer();
         try {
             Messages.writeCString(buffer, ";".getBytes(StandardCharsets.UTF_8));
-            ctx.handleSimpleQuery(buffer, channel);
+            ctx.handleSimpleQuery(buffer, new DelayableWriteChannel(channel));
         } finally {
             buffer.release();
         }
@@ -247,6 +247,7 @@ public class PostgresWireProtocolTest extends CrateDummyClusterServiceUnitTest {
             channel.releaseInbound();
 
             // we should get back a RowDescription message
+            channel.flushOutbound();
             ByteBuf response = channel.readOutbound();
             try {
                 assertThat(response.readByte(), is((byte) 'T'));
@@ -297,6 +298,7 @@ public class PostgresWireProtocolTest extends CrateDummyClusterServiceUnitTest {
             channel.releaseInbound();
 
             // we should get back a ParameterDescription message
+            channel.flushOutbound();
             ByteBuf response = channel.readOutbound();
             try {
                 assertThat(response.readByte(), is((byte) 't'));
@@ -494,6 +496,7 @@ public class PostgresWireProtocolTest extends CrateDummyClusterServiceUnitTest {
         DescribeResult describeResult = mock(DescribeResult.class);
         when(describeResult.getFields()).thenReturn(null);
         when(session.describe(anyChar(), anyString())).thenReturn(describeResult);
+        when(session.transactionState()).thenReturn(TransactionState.IDLE);
 
         PostgresWireProtocol ctx =
             new PostgresWireProtocol(
@@ -521,7 +524,7 @@ public class PostgresWireProtocolTest extends CrateDummyClusterServiceUnitTest {
         try {
             // the actual statements don't have to be valid as they are not executed
             Messages.writeCString(query, statements.getBytes(StandardCharsets.UTF_8));
-            ctx.handleSimpleQuery(query, channel);
+            ctx.handleSimpleQuery(query, new DelayableWriteChannel(channel));
         } finally {
             query.release();
         }

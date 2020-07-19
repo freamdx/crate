@@ -35,22 +35,26 @@ import io.crate.expression.scalar.SubscriptObjectFunction;
 import io.crate.expression.scalar.SubscriptRecordFunction;
 import io.crate.expression.scalar.arithmetic.ArithmeticFunctions;
 import io.crate.expression.scalar.arithmetic.ArrayFunction;
+import io.crate.expression.scalar.arithmetic.NegateFunctions;
 import io.crate.expression.scalar.cast.CastMode;
 import io.crate.expression.scalar.cast.ExplicitCastFunction;
 import io.crate.expression.scalar.cast.ImplicitCastFunction;
 import io.crate.expression.scalar.cast.TryCastFunction;
 import io.crate.expression.scalar.systeminformation.CurrentSchemaFunction;
 import io.crate.expression.scalar.systeminformation.CurrentSchemasFunction;
+import io.crate.expression.scalar.timestamp.CurrentTimeFunction;
 import io.crate.expression.scalar.timestamp.CurrentTimestampFunction;
 import io.crate.expression.symbol.format.MatchPrinter;
 import io.crate.expression.symbol.format.Style;
-import io.crate.metadata.FunctionIdent;
 import io.crate.metadata.FunctionInfo;
 import io.crate.metadata.FunctionName;
+import io.crate.metadata.FunctionType;
 import io.crate.metadata.Reference;
+import io.crate.metadata.Scalar;
 import io.crate.metadata.functions.Signature;
 import io.crate.types.ArrayType;
 import io.crate.types.DataType;
+import io.crate.types.DataTypes;
 import org.elasticsearch.Version;
 import org.elasticsearch.common.io.stream.StreamInput;
 import org.elasticsearch.common.io.stream.StreamOutput;
@@ -62,8 +66,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-
-import static java.util.Objects.requireNonNull;
 
 public class Function extends Symbol implements Cloneable {
 
@@ -77,6 +79,7 @@ public class Function extends Symbol implements Cloneable {
     );
 
     private final List<Symbol> arguments;
+    private final DataType<?> returnType;
     private final FunctionInfo info;
     @Nullable
     private final Signature signature;
@@ -93,24 +96,22 @@ public class Function extends Symbol implements Cloneable {
         arguments = List.copyOf(Symbols.listFromStream(in));
         if (in.getVersion().onOrAfter(Version.V_4_2_0) && in.readBoolean()) {
             signature = new Signature(in);
+            returnType = DataTypes.fromStream(in);
         } else {
             signature = null;
+            returnType = info.returnType();
         }
     }
 
-    public Function(FunctionInfo info, Signature signature, List<Symbol> arguments) {
-        this(info, signature, arguments, null);
+    public Function(Signature signature, List<Symbol> arguments, DataType<?> returnType) {
+        this(signature, arguments, returnType, null);
     }
 
-    public Function(FunctionInfo info, Signature signature, List<Symbol> arguments, Symbol filter) {
-        requireNonNull(info, "function info is null");
-        if (arguments.size() != info.ident().argumentTypes().size()) {
-            throw new IllegalArgumentException(
-                "number of arguments must match the number of argumentTypes of the FunctionIdent");
-        }
-        this.info = info;
+    public Function(Signature signature, List<Symbol> arguments, DataType<?> returnType, Symbol filter) {
+        this.info = FunctionInfo.of(signature, Symbols.typeView(arguments), returnType);
         this.signature = signature;
         this.arguments = List.copyOf(arguments);
+        this.returnType = returnType;
         this.filter = filter;
     }
 
@@ -118,8 +119,61 @@ public class Function extends Symbol implements Cloneable {
         return arguments;
     }
 
+    /**
+     * @deprecated Use {{@link #signature()}} instead. Will be removed with next major version.
+     */
     public FunctionInfo info() {
         return info;
+    }
+
+    /**
+     * Wrapper method for BWC when symbols are retrieved from older nodes without a signature.
+     */
+    public String name() {
+        if (signature != null) {
+            return signature.getName().name();
+        }
+        return info.ident().name();
+    }
+
+    /**
+     * Wrapper method for BWC when symbols are retrieved from older nodes without a signature.
+     */
+    public boolean hasFeature(Scalar.Feature feature) {
+        if (signature != null) {
+            return signature.hasFeature(feature);
+        }
+        return info.hasFeature(feature);
+    }
+
+    /**
+     * Wrapper method for BWC when symbols are retrieved from older nodes without a signature.
+     */
+    public boolean isDeterministic() {
+        if (signature != null) {
+            return signature.isDeterministic();
+        }
+        return info.isDeterministic();
+    }
+
+    /**
+     * Wrapper method for BWC when symbols are retrieved from older nodes without a signature.
+     */
+    public FunctionName fqnName() {
+        if (signature != null) {
+            return signature.getName();
+        }
+        return info.ident().fqnName();
+    }
+
+    /**
+     * Wrapper method for BWC when symbols are retrieved from older nodes without a signature.
+     */
+    public FunctionType type() {
+        if (signature != null) {
+            return signature.getKind();
+        }
+        return info.type();
     }
 
     @Nullable
@@ -134,12 +188,18 @@ public class Function extends Symbol implements Cloneable {
 
     @Override
     public DataType<?> valueType() {
-        return info.returnType();
+        return returnType;
     }
 
     @Override
     public Symbol cast(DataType<?> targetType, CastMode... modes) {
-        if (targetType instanceof ArrayType && info.ident().name().equals(ArrayFunction.NAME)) {
+        String name;
+        if (signature != null) {
+            name = signature.getName().name();
+        } else {
+            name = info.ident().name();
+        }
+        if (targetType instanceof ArrayType && name.equals(ArrayFunction.NAME)) {
             /* We treat _array(...) in a special way since it's a value constructor and no regular function
              * This allows us to do proper type inference for inserts/updates where there are assignments like
              *
@@ -160,13 +220,13 @@ public class Function extends Symbol implements Cloneable {
             try {
                 newArgs.add(arg.cast(innerType, modes));
             } catch (ConversionException e) {
-                throw new ConversionException(info.returnType(), newDataType);
+                throw new ConversionException(returnType, newDataType);
             }
         }
         return new Function(
-            new FunctionInfo(new FunctionIdent(info.ident().name(), Symbols.typeView(newArgs)), newDataType),
             signature,
             newArgs,
+            newDataType,
             null
         );
     }
@@ -192,6 +252,7 @@ public class Function extends Symbol implements Cloneable {
             out.writeBoolean(signature != null);
             if (signature != null) {
                 signature.writeTo(out);
+                DataTypes.toStream(returnType, out);
             }
         }
     }
@@ -218,10 +279,14 @@ public class Function extends Symbol implements Cloneable {
     @Override
     public String toString(Style style) {
         StringBuilder builder = new StringBuilder();
-        String name = info.ident().name();
+        String name = signature.getName().name();
         switch (name) {
             case MatchPredicate.NAME:
                 MatchPrinter.printMatchPredicate(this, style, builder);
+                break;
+
+            case NegateFunctions.NAME:
+                printNegate(builder, style);
                 break;
 
             case SubscriptFunction.NAME:
@@ -278,6 +343,14 @@ public class Function extends Symbol implements Cloneable {
                 }
                 break;
 
+            case CurrentTimeFunction.NAME:
+                if (arguments.isEmpty()) {
+                    builder.append("CURRENT_TIME");
+                } else {
+                    printFunctionWithParenthesis(builder, style);
+                }
+                break;
+
             default:
                 if (name.startsWith(AnyOperator.OPERATOR_PREFIX)) {
                     printAnyOperator(builder, style);
@@ -301,6 +374,11 @@ public class Function extends Symbol implements Cloneable {
         return builder.toString();
     }
 
+    private void printNegate(StringBuilder builder, Style style) {
+        builder.append("- ");
+        builder.append(arguments.get(0).toString(style));
+    }
+
     private void printSubscriptRecord(StringBuilder builder, Style style) {
         builder.append("(");
         builder.append(arguments.get(0).toString(style));
@@ -309,7 +387,7 @@ public class Function extends Symbol implements Cloneable {
     }
 
     private void printAnyOperator(StringBuilder builder, Style style) {
-        String name = info.ident().name();
+        String name = signature.getName().name();
         assert name.startsWith(AnyOperator.OPERATOR_PREFIX) : "function for printAnyOperator must start with any prefix";
         assert arguments.size() == 2 : "function's number of arguments must be 2";
         String operatorName = name.substring(4).replace('_', ' ').toUpperCase(Locale.ENGLISH);
@@ -390,13 +468,8 @@ public class Function extends Symbol implements Cloneable {
 
     private void printFunctionWithParenthesis(StringBuilder builder, Style style) {
         FunctionName functionName = info.ident().fqnName();
-        String schema = functionName.schema();
-        if (style == Style.QUALIFIED && schema != null) {
-            builder.append(schema).append(".");
-        }
-        builder
-            .append(functionName.name())
-            .append("(");
+        builder.append(functionName.toString(style));
+        builder.append("(");
         for (int i = 0; i < arguments.size(); i++) {
             Symbol argument = arguments.get(i);
             builder.append(argument.toString(style));

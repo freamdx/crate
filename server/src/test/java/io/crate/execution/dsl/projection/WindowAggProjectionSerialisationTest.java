@@ -29,7 +29,6 @@ import io.crate.expression.operator.OperatorModule;
 import io.crate.expression.symbol.Literal;
 import io.crate.expression.symbol.Symbol;
 import io.crate.expression.symbol.WindowFunction;
-import io.crate.expression.symbol.WindowFunctionContext;
 import io.crate.metadata.FunctionImplementation;
 import io.crate.metadata.Functions;
 import io.crate.metadata.functions.Signature;
@@ -37,10 +36,10 @@ import io.crate.types.DataTypes;
 import org.elasticsearch.Version;
 import org.elasticsearch.common.inject.ModulesBuilder;
 import org.elasticsearch.common.io.stream.BytesStreamOutput;
+import org.hamcrest.Matchers;
 import org.junit.Test;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 
 import static java.util.Collections.singletonList;
@@ -65,24 +64,24 @@ public class WindowAggProjectionSerialisationTest {
             new WindowDefinition(singletonList(Literal.of(2L)), null, null);
 
         WindowFunction firstWindowFunction = new WindowFunction(
-            sumFunctionImpl.info(), singletonList(Literal.of(1L)), null, partitionByOneWindowDef);
-        WindowFunction secondWindowFunction = new WindowFunction(
-            sumFunctionImpl.info(), singletonList(Literal.of(2L)), null, partitionByTwoWindowDef);
-
-        ArrayList<WindowFunctionContext> windowFunctionContexts = new ArrayList<>(2);
-        windowFunctionContexts.add(new WindowFunctionContext(
-            firstWindowFunction,
+            sumFunctionImpl.signature(),
             singletonList(Literal.of(1L)),
-            Literal.BOOLEAN_TRUE));
-        windowFunctionContexts.add(new WindowFunctionContext(
-            secondWindowFunction,
+            sumFunctionImpl.boundSignature().getReturnType().createType(),
+            null,
+            partitionByOneWindowDef
+        );
+        WindowFunction secondWindowFunction = new WindowFunction(
+            sumFunctionImpl.signature(),
             singletonList(Literal.of(2L)),
-            Literal.BOOLEAN_TRUE));
+            sumFunctionImpl.boundSignature().getReturnType().createType(),
+            null,
+            partitionByTwoWindowDef
+        );
 
         Symbol standaloneInput = Literal.of(42L);
         var expectedWindowAggProjection = new WindowAggProjection(
             partitionByOneWindowDef,
-            windowFunctionContexts,
+            List.of(firstWindowFunction, secondWindowFunction),
             List.of(standaloneInput));
 
         var output = new BytesStreamOutput();
@@ -106,21 +105,16 @@ public class WindowAggProjectionSerialisationTest {
             new WindowDefinition(singletonList(Literal.of(1L)), null, null);
 
         WindowFunction windowFunction = new WindowFunction(
-            sumFunctionImpl.info(),
+            sumFunctionImpl.signature(),
             singletonList(Literal.of(2L)),
+            sumFunctionImpl.boundSignature().getReturnType().createType(),
             null,
             partitionByOneWindowDef);
-
-        ArrayList<WindowFunctionContext> windowFunctionContexts = new ArrayList<>(1);
-        windowFunctionContexts.add(new WindowFunctionContext(
-            windowFunction,
-            singletonList(Literal.of(2L)),
-            Literal.BOOLEAN_FALSE));
 
         Symbol standaloneInput = Literal.of(42L);
         var windowAggProjection = new WindowAggProjection(
             partitionByOneWindowDef,
-            windowFunctionContexts,
+            List.of(windowFunction),
             List.of(standaloneInput));
 
         var output = new BytesStreamOutput();
@@ -135,8 +129,9 @@ public class WindowAggProjectionSerialisationTest {
             actualWindowAggProjection.outputs(),
             contains(standaloneInput, windowFunction));
         assertThat(
-            actualWindowAggProjection.windowFunctionContexts().get(0).filter(),
-            is(Literal.BOOLEAN_TRUE));
+            actualWindowAggProjection.windowFunctions().get(0).filter(),
+            Matchers.nullValue()
+        );
     }
 
     private FunctionImplementation getSumFunction() {
@@ -145,7 +140,8 @@ public class WindowAggProjectionSerialisationTest {
                 SumAggregation.NAME,
                 DataTypes.FLOAT.getTypeSignature(),
                 DataTypes.FLOAT.getTypeSignature()),
-            List.of(DataTypes.FLOAT)
+            List.of(DataTypes.FLOAT),
+            DataTypes.FLOAT
         );
     }
 }

@@ -108,8 +108,30 @@ public class TestStatementBuilder {
     }
 
     @Test
+    public void testSetTransaction() throws Exception {
+        printStatement("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE");
+        printStatement("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
+        printStatement("SET TRANSACTION ISOLATION LEVEL READ COMMITTED");
+        printStatement("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED");
+        printStatement("SET TRANSACTION READ WRITE");
+        printStatement("SET TRANSACTION READ ONLY");
+        printStatement("SET TRANSACTION DEFERRABLE");
+        printStatement("SET TRANSACTION NOT DEFERRABLE");
+        printStatement("SET TRANSACTION READ WRITE, ISOLATION LEVEL SERIALIZABLE");
+    }
+
+    @Test
     public void test_analyze_statement_can_be_parsed() {
         printStatement("ANALYZE");
+    }
+
+    @Test
+    public void test_discard_statement_parsing() throws Exception {
+        printStatement("DISCARD ALL");
+        printStatement("DISCARD PLANS");
+        printStatement("DISCARD SEQUENCES");
+        printStatement("DISCARD TEMPORARY");
+        printStatement("DISCARD TEMP");
     }
 
 
@@ -1050,6 +1072,8 @@ public class TestStatementBuilder {
 
         printStatement("insert into t (a, b) values (1, 2) on conflict do nothing");
         printStatement("insert into t (a, b) values (1, 2) on conflict (a,b) do nothing");
+        printStatement("insert into t (a, b) values (1, 2) on conflict (o['id'], b) do nothing");
+        printStatement("insert into t (a, b) values (1, 2) on conflict (a, o['x']['y']) do nothing");
         printStatement("insert into t (a, b) values (1, 2) on conflict (a) do update set b = b + 1");
         printStatement("insert into t (a, b, c) values (1, 2, 3) on conflict (a, b) do update set a = a + 1, b = 3");
         printStatement("insert into t (a, b, c) values (1, 2), (3, 4) on conflict (c) do update set a = excluded.a + 1, b = 4");

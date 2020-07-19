@@ -31,9 +31,8 @@ import org.elasticsearch.Version;
 import org.elasticsearch.common.breaker.CircuitBreakingException;
 import org.elasticsearch.index.mapper.MappedFieldType;
 
-import java.util.List;
-
 import javax.annotation.Nullable;
+import java.util.List;
 
 /**
  * A special FunctionImplementation that compute a single result from a set of input values
@@ -87,7 +86,7 @@ public abstract class AggregationFunction<TPartial, TFinal> implements FunctionI
      */
     public abstract TFinal terminatePartial(RamAccounting ramAccounting, TPartial state);
 
-    public abstract DataType partialType();
+    public abstract DataType<?> partialType();
 
     /**
      * Executing aggregations as window functions might require different runtime implementations in order to still be
@@ -116,8 +115,7 @@ public abstract class AggregationFunction<TPartial, TFinal> implements FunctionI
     }
 
     @Nullable
-    @SuppressWarnings("rawtypes")
-    public DocValueAggregator<?> getDocValueAggregator(List<DataType> argumentTypes, List<MappedFieldType> fieldTypes) {
+    public DocValueAggregator<?> getDocValueAggregator(List<DataType<?>> argumentTypes, List<MappedFieldType> fieldTypes) {
         return null;
     }
 }

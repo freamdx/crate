@@ -22,20 +22,23 @@
 
 package io.crate.analyze;
 
-import io.crate.expression.symbol.Literal;
-import io.crate.sql.tree.Assignment;
-import io.crate.sql.tree.SetStatement;
-import io.crate.test.integration.CrateDummyClusterServiceUnitTest;
-import io.crate.testing.SQLExecutor;
-import org.junit.Before;
-import org.junit.Test;
+import static io.crate.testing.SymbolMatchers.isLiteral;
+import static org.hamcrest.Matchers.is;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static io.crate.testing.SymbolMatchers.isLiteral;
-import static org.hamcrest.Matchers.is;
+import org.hamcrest.Matchers;
+import org.junit.Before;
+import org.junit.Test;
+
+import io.crate.expression.symbol.Literal;
+import io.crate.sql.tree.Assignment;
+import io.crate.sql.tree.SetStatement;
+import io.crate.sql.tree.SetTransactionStatement;
+import io.crate.test.integration.CrateDummyClusterServiceUnitTest;
+import io.crate.testing.SQLExecutor;
 
 public class SetAnalyzerTest extends CrateDummyClusterServiceUnitTest {
 
@@ -104,14 +107,11 @@ public class SetAnalyzerTest extends CrateDummyClusterServiceUnitTest {
 
     @Test
     public void testSetSessionTransactionMode() throws Exception {
-        AnalyzedSetStatement analysis = analyze("SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL READ UNCOMMITTED");
-        assertThat(analysis.scope(), is(SetStatement.Scope.SESSION_TRANSACTION_MODE));
-
-        assertThat(
-            analysis.settings().get(0).columnName(), is(Literal.of("transaction_mode")));
-
-        assertThat(
-            analysis.settings().get(0).expressions().size(), is(4));
+        AnalyzedSetTransaction analysis = analyze(
+            "SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL READ UNCOMMITTED");
+        assertThat(analysis.transactionModes(), Matchers.contains(
+            is(SetTransactionStatement.IsolationLevel.READ_UNCOMMITTED)
+        ));
     }
 
     @Test

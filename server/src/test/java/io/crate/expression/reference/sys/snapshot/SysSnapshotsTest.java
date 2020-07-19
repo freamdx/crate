@@ -24,11 +24,12 @@ package io.crate.expression.reference.sys.snapshot;
 
 import com.google.common.collect.ImmutableList;
 import io.crate.test.integration.CrateUnitTest;
-import org.elasticsearch.cluster.metadata.RepositoryMetaData;
+import org.elasticsearch.cluster.metadata.RepositoryMetadata;
 import org.elasticsearch.common.UUIDs;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.repositories.Repository;
 import org.elasticsearch.repositories.RepositoryData;
+import org.elasticsearch.repositories.ShardGenerations;
 import org.elasticsearch.snapshots.SnapshotException;
 import org.elasticsearch.snapshots.SnapshotId;
 import org.elasticsearch.snapshots.SnapshotInfo;
@@ -55,11 +56,11 @@ public class SysSnapshotsTest extends CrateUnitTest {
         snapshots.put(s1.getUUID(), s1);
         snapshots.put(s2.getUUID(), s2);
         RepositoryData repositoryData = new RepositoryData(
-            1, snapshots, Collections.emptyMap(), Collections.emptyMap(), Collections.emptyList());
+            1, snapshots, Collections.emptyMap(), Collections.emptyMap(), ShardGenerations.EMPTY);
 
         Repository r1 = mock(Repository.class);
         when(r1.getRepositoryData()).thenReturn(repositoryData);
-        when(r1.getMetadata()).thenReturn(new RepositoryMetaData("repo1", "fs", Settings.EMPTY));
+        when(r1.getMetadata()).thenReturn(new RepositoryMetadata("repo1", "fs", Settings.EMPTY));
         when(r1.getSnapshotInfo(eq(s1))).thenThrow(new SnapshotException("repo1", "s1", "Everything is wrong"));
         when(r1.getSnapshotInfo(eq(s2))).thenReturn(new SnapshotInfo(s2, Collections.emptyList(), SnapshotState.SUCCESS));
 
